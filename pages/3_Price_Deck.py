@@ -1,11 +1,14 @@
 import streamlit as st
 import pandas as pd
-from utils import PriceDeck
+from utils import PriceDeck, ensure_state_init, save_project
 import plotly.express as px
 
 st.set_page_config(page_title="Price Deck Setup", layout="wide")
 
 st.title("📈 Oil & Gas Price Setup")
+
+# --- Initialize Session State ---
+ensure_state_init()
 
 # --- Sidebar Inputs ---
 with st.sidebar:
@@ -57,17 +60,21 @@ st.subheader("📁 Case Management")
 case_name = st.text_input("Enter Price Scenario Name", value="Base Forecast")
 
 if st.button("💾 Save Price Scenario"):
-    price_case = {
-        "oil": price_obj.oil_price_by_year,
-        "gas": price_obj.gas_price_by_year,
-        "params": {
-            "oil_init": oil_price_init,
-            "gas_init": gas_price_init,
-            "inflation": inflation_rate
+    if not st.session_state.current_project:
+        st.error("⚠️ No active project! Please create or select a project in the Sidebar first.")
+    else:
+        price_case = {
+            "oil": price_obj.oil_price_by_year,
+            "gas": price_obj.gas_price_by_year,
+            "params": {
+                "oil_init": oil_price_init,
+                "gas_init": gas_price_init,
+                "inflation": inflation_rate
+            }
         }
-    }
-    st.session_state.price_cases[case_name] = price_case
-    st.success(f"Price scenario '{case_name}' saved successfully!")
+        st.session_state.price_cases[case_name] = price_case
+        save_project(st.session_state.current_project)
+        st.success(f"Price scenario '{case_name}' saved to project '{st.session_state.current_project}'!")
 
 if st.session_state.price_cases:
     st.write("Saved Scenarios:", list(st.session_state.price_cases.keys()))

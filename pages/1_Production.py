@@ -4,7 +4,7 @@ import numpy as np
 from production import YearlyProductionProfile
 import plotly.express as px
 import plotly.graph_objects as go
-
+from utils import ensure_state_init, save_project
 import math
 
 st.set_page_config(page_title="Production Profile", layout="wide")
@@ -12,14 +12,7 @@ st.set_page_config(page_title="Production Profile", layout="wide")
 st.title("🛢️ Production Profile & Type Curve")
 
 # --- Initialize Session State ---
-if 'profile' not in st.session_state:
-    st.session_state.profile = None
-if 'tc_data' not in st.session_state:
-    st.session_state.tc_data = None
-if 'prod_data' not in st.session_state:
-    st.session_state.prod_data = None
-if 'drilling_plan_results' not in st.session_state:
-    st.session_state.drilling_plan_results = None
+ensure_state_init()
 
 tab_p1, tab_p2 = st.tabs(["📈 Type Curve", "🏭 Production Profile"])
 
@@ -147,7 +140,7 @@ with tab_p2:
             )
             fig_prod.update_xaxes(title_text="Year")
             fig_prod.update_yaxes(title_text="Gas Production (BCF/y)", secondary_y=False)
-            fig_prod.update_yaxes(title_text="Number of Wells", secondary_y=True, rangemode='tozero')
+            fig_prod.update_yaxes(title_text="Number of Wells", secondary_y=True, rangemode='tozero', showgrid=False)
 
             st.plotly_chart(fig_prod, use_container_width=True)
         with col_res2:
@@ -160,9 +153,11 @@ st.divider()
 st.subheader("📁 Case Management")
 case_name = st.text_input("Enter Case Name", value="Base Case")
 
-if st.button("💾 Save Final Case"):
+if st.button("💾 Save Production Profile Case"):
     if st.session_state.prod_data is None:
         st.error("Please generate the production profile before saving.")
+    elif not st.session_state.current_project:
+        st.error("⚠️ No active project! Please create or select a project in the Sidebar first.")
     else:
         case_data = {
             "params": {
@@ -179,7 +174,11 @@ if st.button("💾 Save Final Case"):
             }
         }
         st.session_state.production_cases[case_name] = case_data
-        st.success(f"Case '{case_name}' saved successfully!")
+        save_project(st.session_state.current_project)
+        st.success(f"Case '{case_name}' saved to project '{st.session_state.current_project}'!")
+
+if st.session_state.production_cases:
+    st.write("Saved Case(s):", list(st.session_state.production_cases.keys()))
 
 # --- Export ---
 if st.session_state.prod_data is not None:
@@ -191,42 +190,3 @@ if st.session_state.prod_data is not None:
         mime='text/csv',
     )
 
-
-# --- Case Management ---
-st.divider()
-st.subheader("📁 Case Management")
-case_name = st.text_input("Enter Case Name", value="Base Case")
-
-if st.button("💾 Save Production Case"):
-    case_data = {
-        "params": {
-            "giip_bcf": giip_bcf,
-            "oiip_mmbbl": oiip_mmbbl,
-            "well_eur_bcf": well_eur_bcf,
-            "drilling_rate": drilling_rate,
-            "max_prod_rate": max_prod_rate
-        },
-        "profiles": {
-            "gas": gas_profile,
-            "oil": oil_profile,
-            "drilling_plan": drilling_plan
-        },
-        "summary": {
-            "total_wells": total_wells,
-            "cgr": cgr
-        }
-    }
-    st.session_state.production_cases[case_name] = case_data
-    st.success(f"Case '{case_name}' saved successfully!")
-
-if st.session_state.production_cases:
-    st.write("Saved Cases:", list(st.session_state.production_cases.keys()))
-
-# --- Export ---
-csv = prod_data.to_csv(index=False).encode('utf-8')
-st.download_button(
-    label="📥 Download Production Profile CSV",
-    data=csv,
-    file_name=f'production_profile_{case_name}.csv',
-    mime='text/csv',
-)

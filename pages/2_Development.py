@@ -2,12 +2,16 @@ import streamlit as st
 import pandas as pd
 from development import DevelopmentCost
 import plotly.graph_objects as go
+from utils import ensure_state_init, save_project
 
 st.set_page_config(page_title="Development Costs", layout="wide")
 
 st.title("🏗️ Development Cost Generation")
 
-# --- Scenario Selection (Dependency) ---
+# --- Initialize Session State ---
+ensure_state_init()
+
+# --- Scenario Selection (Dependency) ---   
 if not st.session_state.production_cases:
     st.warning("⚠️ No production cases found. Please go to the **Production** page and save a case first.")
     st.stop()
@@ -105,17 +109,21 @@ st.subheader("📁 Case Management")
 case_name = st.text_input("Enter Cost Case Name", value="Base Cost")
 
 if st.button("💾 Save Cost Case"):
-    cost_case = {
-        "dev_obj": dev,
-        "selected_prod": selected_prod_name,
-        "summary": {
-            "total_capex": total_capex,
-            "total_opex": total_opex,
-            "total_abex": total_abex
+    if not st.session_state.current_project:
+        st.error("⚠️ No active project! Please create or select a project in the Sidebar first.")
+    else:
+        cost_case = {
+            "dev_obj": dev,
+            "selected_prod": selected_prod_name,
+            "summary": {
+                "total_capex": total_capex,
+                "total_opex": total_opex,
+                "total_abex": total_abex
+            }
         }
-    }
-    st.session_state.development_cases[case_name] = cost_case
-    st.success(f"Cost case '{case_name}' saved successfully!")
+        st.session_state.development_cases[case_name] = cost_case
+        save_project(st.session_state.current_project)
+        st.success(f"Cost case '{case_name}' saved to project '{st.session_state.current_project}'!")
 
 # --- Export ---
 csv = cost_data.to_csv(index=False).encode('utf-8')
