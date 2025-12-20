@@ -121,11 +121,13 @@ def deserialize_dev_cases(serialized_cases):
             dev_obj.set_drilling_schedule(
                 drill_start_year=info["drill_start_year"],
                 yearly_drilling_schedule={int(k): v for k, v in info["yearly_drilling_schedule"].items()},
+                already_shifted=True,
                 output=False
             )
             dev_obj.set_annual_production(
                 annual_gas_production={int(k): v for k, v in info["annual_gas_production"].items()},
                 annual_oil_production={int(k): v for k, v in info["annual_oil_production"].items()},
+                already_shifted=True,
                 output=False
             )
             dev_obj.calculate_total_costs(output=False)

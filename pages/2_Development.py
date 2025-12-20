@@ -89,8 +89,23 @@ with col1:
     fig_annual.add_trace(go.Bar(x=cost_data['Year'], y=cost_data['CAPEX'], name='CAPEX'))
     fig_annual.add_trace(go.Bar(x=cost_data['Year'], y=cost_data['OPEX'], name='OPEX'))
     fig_annual.add_trace(go.Bar(x=cost_data['Year'], y=cost_data['ABEX'], name='ABEX'))
-    fig_annual.update_layout(barmode='stack', title="Annual Expenditures")
+    fig_annual.update_layout(barmode='stack', title="Annual Expenditures (MM$)", xaxis_title="Year", yaxis_title="MM$")
     st.plotly_chart(fig_annual, use_container_width=True)
+
+    # --- Added Gas Production Chart ---
+    st.subheader("Annual Gas Production")
+    prod_years = sorted(dev.annual_gas_production.keys())
+    if prod_years:
+        prod_data = pd.DataFrame({
+            'Year': prod_years,
+            'Gas Production': [dev.annual_gas_production.get(y, 0.0) for y in prod_years]
+        })
+        fig_prod = go.Figure()
+        fig_prod.add_trace(go.Bar(x=prod_data['Year'], y=prod_data['Gas Production'], name='Gas Production', marker_color='green'))
+        fig_prod.update_layout(title="Annual Gas Production (BCF/y)", xaxis_title="Year", yaxis_title="BCF/y")
+        st.plotly_chart(fig_prod, use_container_width=True)
+    else:
+        st.info("No gas production data available for the selected drilling plan.")
 
 with col2:
     st.subheader("Summary Metrics")

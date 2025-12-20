@@ -107,24 +107,28 @@ class DevelopmentCost:
             print(f"[exploration] Cumulative wells by year: {self.cumulative_well_count}")
 
 
-    def set_drilling_schedule(self, drill_start_year, yearly_drilling_schedule: Dict[int, int], output=True):
+    def set_drilling_schedule(self, drill_start_year, yearly_drilling_schedule: Dict[int, int], already_shifted: bool = False, output=True):
         """
         yearly_drilling_schedule: dict {year: wells}
+        If already_shifted is True, the keys are already actual years.
         This function sorts years, computes cumulative wells and sets related attributes.
         """
         self.drill_start_year = drill_start_year
         if not isinstance(yearly_drilling_schedule, dict):
             raise ValueError("yearly_drilling_schedule must be a dict {year: wells}")
-        if self.drill_start_year < self.dev_start_year:
-            raise ValueError(f"dev_start_year({drill_start_year}) should be later than dev_start_year({dev_start_year})")
-
-        # make a shallow copy and sort years
-        for y_idx, num_wells in yearly_drilling_schedule.items():
-            self.yearly_drilling_schedule[y_idx+self.drill_start_year] = num_wells
+        
+        if already_shifted:
+            self.yearly_drilling_schedule = {int(k): v for k, v in yearly_drilling_schedule.items()}
+        else:
+            if self.drill_start_year < self.dev_start_year:
+                raise ValueError(f"drill_start_year({drill_start_year}) should be later than dev_start_year({self.dev_start_year})")
+            for y_idx, num_wells in yearly_drilling_schedule.items():
+                self.yearly_drilling_schedule[int(y_idx)+self.drill_start_year] = num_wells
         # self.yearly_drilling_schedule = copy.deepcopy(yearly_drilling_schedule)
 
         # self.cost_years = sorted(list(self.yearly_drilling_schedule.keys())) dev_start_year가 더 빠를경우 오류생길 수 있음
-        self.cost_years = sorted(list(range(self.dev_start_year, list(self.yearly_drilling_schedule.keys())[-1],1)))
+        last_drill_year = sorted(self.yearly_drilling_schedule.keys())[-1]
+        self.cost_years = sorted(list(range(self.dev_start_year, last_drill_year + 1)))
 
         if len(self.cost_years) == 0:
             raise ValueError("yearly_drilling_schedule must contain at least one year")
@@ -144,16 +148,20 @@ class DevelopmentCost:
             print(f"[schedule] Drill period: {self.drill_start_year} - {self.cost_years[-1]}")
             print(f"[schedule] Total wells: {self.cumulative_well_count[self.cost_years[-1]]}")
 
-    def set_annual_production(self, annual_gas_production: Dict[int, float], annual_oil_production: Dict[int, float], output=True):
-        for y_idx, value in annual_gas_production.items():
-            self.annual_gas_production[y_idx+self.drill_start_year] = value
+    def set_annual_production(self, annual_gas_production: Dict[int, float], annual_oil_production: Dict[int, float], already_shifted: bool = False, output=True):
+        if already_shifted:
+            self.annual_gas_production = {int(k): v for k, v in annual_gas_production.items()}
+            self.annual_oil_production = {int(k): v for k, v in annual_oil_production.items()}
+        else:
+            for y_idx, value in annual_gas_production.items():
+                self.annual_gas_production[int(y_idx)+self.drill_start_year] = value
 
-        for y_idx, value in annual_oil_production.items():
-            self.annual_oil_production[y_idx+self.drill_start_year] = value
+            for y_idx, value in annual_oil_production.items():
+                self.annual_oil_production[int(y_idx)+self.drill_start_year] = value
 
         self.production_years = list(self.annual_gas_production.keys())
         # Calculate _total_production_duration based on years with production > 0
-        self._total_production_duration = sum(1 for year, prod in annual_gas_production.items() if prod > 0)
+        self._total_production_duration = sum(1 for year, prod in self.annual_gas_production.items() if prod > 0)
         self.total_gas_production = self._sum_dict_values(self.annual_gas_production)
         self.total_oil_production = self._sum_dict_values(self.annual_oil_production)
 

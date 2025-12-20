@@ -69,9 +69,21 @@ if run_button:
     # IMPORTANT: Use the production profiles from the dev_obj because they are already 
     # shifted to the actual calendar years (drill_start_year).
     cf.set_development_costs(dev_obj, output=False)
+    
+    # Precaution: if for some reason dev_obj has indices instead of years, shift them
+    def ensure_actual_years(d, start_year):
+        if not d: return {}
+        min_key = min(d.keys())
+        if min_key < 1000: # It's likely an index (1, 2, 3...)
+            return {int(k) + start_year: v for k, v in d.items()}
+        return {int(k): v for k, v in d.items()}
+
+    oil_shifted = ensure_actual_years(dev_obj.annual_oil_production, dev_obj.drill_start_year)
+    gas_shifted = ensure_actual_years(dev_obj.annual_gas_production, dev_obj.drill_start_year)
+
     cf.set_production_profile_from_dicts(
-        oil_dict=dev_obj.annual_oil_production,
-        gas_dict=dev_obj.annual_gas_production
+        oil_dict=oil_shifted,
+        gas_dict=gas_shifted
     )
     
     # Run Full Cycle
