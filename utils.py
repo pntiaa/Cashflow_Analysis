@@ -4,9 +4,6 @@ import numpy as np
 import json
 import os
 from pathlib import Path
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-import plotly.express as px
 from typing import Dict, List
 
 # --- Session State Initialization ---
@@ -81,6 +78,54 @@ def load_project(project_name: str):
 
 def list_projects():
     return [f.stem for f in DATA_DIR.glob("*.json")]
+
+def render_project_sidebar():
+    """Renders the project management section in the sidebar. Shared across all pages."""
+    with st.sidebar:
+        st.title("📁 Project Management")
+        
+        project_option = st.radio("Action", ["Select Existing", "Create New"], key="project_action_radio")
+
+        if project_option == "Create New":
+            new_project_name = st.text_input("New Project Name", key="new_project_name_input")
+            if st.button("➕ Create Project", key="create_project_btn"):
+                if new_project_name:
+                    # Initialize empty state for new project
+                    st.session_state.current_project = new_project_name
+                    st.session_state.production_cases = {}
+                    st.session_state.development_cases = {}
+                    st.session_state.price_cases = {}
+                    save_project(new_project_name)
+                    st.success(f"Project '{new_project_name}' created!")
+                    st.rerun()
+                else:
+                    st.error("Please enter a name.")
+
+        else:
+            existing_projects = list_projects()
+            if existing_projects:
+                # Determine current index
+                try:
+                    current_idx = existing_projects.index(st.session_state.current_project) if st.session_state.current_project in existing_projects else 0
+                except ValueError:
+                    current_idx = 0
+                    
+                selected_project = st.selectbox("Select Project", existing_projects, index=current_idx, key="select_project_selectbox")
+                
+                if st.button("📂 Load Project", key="load_project_btn"):
+                    load_project(selected_project)
+                    st.success(f"Loaded '{selected_project}'")
+                    st.rerun()
+            else:
+                st.info("No projects found. Create one!")
+
+        if st.session_state.get("current_project"):
+            st.markdown(f"---")
+            st.markdown(f"**Current Project:** `{st.session_state.current_project}`")
+        else:
+            st.warning("⚠️ No project active. Data will NOT be saved.")
+        
+        st.divider()
 
 def serialize_dev_cases(dev_cases):
     """Converts DevelopmentCost objects to serializable dicts."""
@@ -199,115 +244,3 @@ class PriceDeck:
                 self.gas_price_by_year[y] = self.gas_price_by_year.get(flat_after_year, self.gas_price_by_year[max(self.gas_price_by_year.keys())])
         return self.oil_price_by_year, self.gas_price_by_year
 
-# --- Plotting Functions ---
-
-def plot_cash_flow_profile_plotly(cf, width=1200, height=800):
-    years = cf.all_years
-    rev = np.array([cf.annual_revenue.get(y, 0.0) for y in years])
-    royalty = np.array([cf.annual_royalty.get(y, 0.0) for y in years])
-    cap = np.array([cf.annual_capex.get(y, 0.0) for y in years])
-    opx = np.array([cf.annual_opex.get(y, 0.0) for y in years])
-    abx = np.array([cf.annual_abex.get(y, 0.0) for y in years])
-    tax = np.array([cf.annual_total_tax.get(y, 0.0) for y in years])
-    net = np.array([cf.annual_net_cash_flow.get(y, 0.0) for y in years])
-    cum = np.array([cf.cumulative_cash_flow.get(y, 0.0) for y in years])
-    
-    fig = make_subplots(
-        rows=2, cols=2,
-        subplot_titles=(
-            "Annual Cash Flow Components",
-            "Cumulative Cash Flow (After Tax)",
-            "Production Profile",
-            "Commodity Prices"
-        ),
-        specs=[
-            [{"type": "xy"}, {"type": "xy"}],
-            [{"type": "xy"}, {"type": "xy", "secondary_y": True}]
-        ],
-        column_widths=[0.6, 0.4],
-        row_heights =[0.6, 0.4],
-        horizontal_spacing=0.1,
-        vertical_spacing=0.2,
-    )
-
-    # 1. Annual
-    fig.add_trace( go.Bar( x=years, y=rev, name='Revenue', marker_color='rgb(102,194,165)'), row=1, col=1)
-    fig.add_trace( go.Bar( x=years, y=-royalty, name='Royalty', marker_color='rgb(252,141,98)' ), row=1, col=1)
-    fig.add_trace( go.Bar( x=years, y=-(cap + opx + abx), name='Costs', marker_color='rgb(141,160,203)' ), row=1, col=1)
-    fig.add_trace( go.Bar( x=years, y=-tax, name='Taxes', marker_color='rgb(231,138,195)' ), row=1, col=1)
-    fig.add_trace(go.Scatter(x=years, y=net, name='Net Flow', mode='lines+markers', line=dict(color='black', width=2)), row=1, col=1)
-    fig.update_layout(barmode='relative')
-
-    # 2. Cumulative
-    fig.add_trace(go.Scatter(
-        x=years, y=cum, name='Cumulative', mode='lines',
-        line=dict(color='purple', width=3), fill='tozeroy'
-    ), row=1, col=2)
-    fig.add_hline(y=0.0, line_dash="dash", line_color="red", row=1, col=2)
-
-    # 3. Production
-    oil_prod = [cf.oil_production_by_year.get(y, 0.0) for y in years]
-    gas_prod = [cf.gas_production_by_year.get(y, 0.0) for y in years]
-    fig.add_trace(go.Bar(x=years, y=gas_prod, name='Gas (BCF)', marker_color='lightblue'), row=2, col=1)
-    
-    # 4. Prices
-    oilp = [cf.oil_price_by_year.get(y, 0.0) for y in years]
-    gasp = [cf.gas_price_by_year.get(y, 0.0) for y in years]
-    fig.add_trace(go.Scatter(x=years, y=oilp, name='Oil ($/bbl)', line=dict(color='green')), row=2, col=2, secondary_y=False)
-    fig.add_trace(go.Scatter(x=years, y=gasp, name='Gas ($/mcf)', line=dict(color='red')), row=2, col=2, secondary_y=True)
-
-    fig.update_layout(height=height, width=width, title_text="Economic Results", template='plotly_white')
-    return fig
-
-def summary_plot(cf, width=1200, height=700):
-    years = cf.all_years
-    rev = np.array([cf.annual_revenue.get(y, 0.0) for y in years])
-    cap = np.array([cf.annual_capex.get(y, 0.0) for y in years])
-    opx = np.array([cf.annual_opex.get(y, 0.0) for y in years])
-    abx = np.array([cf.annual_abex.get(y, 0.0) for y in years])
-    tax = np.array([cf.annual_total_tax.get(y, 0.0) for y in years])
-    net = np.array([cf.annual_net_cash_flow.get(y, 0.0) for y in years])
-    cum = np.array([cf.cumulative_cash_flow.get(y, 0.0) for y in years])
-
-    fig = make_subplots(
-        rows=2, cols=2,
-        subplot_titles=("Key Metrics", "Price Trends", "Annual & Cumulative Cash Flow"),
-        specs=[
-            [{"type": "table"}, {"type": "xy","secondary_y": True}],
-            [{"type": "xy", "colspan": 2, "secondary_y": True}, None],
-        ],
-        column_widths=[0.4, 0.6],
-        row_heights =[0.4, 0.6],
-        horizontal_spacing=0.1,
-        vertical_spacing=0.2,
-    )
-
-    # Table
-    metrics = ['Net Cash Flow', 'NPV', 'IRR']
-    values = [
-        f"{cum[-1]:,.1f} MM$",
-        f"{cf.npv:,.1f} MM$",
-        f"{cf.irr*100:.1f}%" if cf.irr else "N/A"
-    ]
-    fig.add_trace(go.Table(
-        header=dict(values=['Metric', 'Value'], fill_color='paleturquoise', align='left'),
-        cells=dict(values=[metrics, values], fill_color='lavender', align='left')
-    ), row=1, col=1)
-
-    # Prices
-    oilp = [cf.oil_price_by_year.get(y, 0.0) for y in years]
-    gasp = [cf.gas_price_by_year.get(y, 0.0) for y in years]
-    fig.add_trace(go.Scatter(x=years, y=oilp, name='Oil Price', line=dict(color='green')), row=1, col=2, secondary_y=False)
-    fig.add_trace(go.Scatter(x=years, y=gasp, name='Gas Price', line=dict(color='red')), row=1, col=2, secondary_y=True)
-
-    # Main Chart
-    color_palette = px.colors.qualitative.Set3
-    fig.add_trace(go.Bar(x=years, y=rev, name='Revenue', marker_color=color_palette[0]), row=2, col=1)
-    fig.add_trace(go.Bar(x=years, y=-cap, name='CAPEX', marker_color=color_palette[1]), row=2, col=1)
-    fig.add_trace(go.Bar(x=years, y=-opx, name='OPEX', marker_color=color_palette[2]), row=2, col=1)
-    fig.add_trace(go.Bar(x=years, y=-tax, name='Tax', marker_color=color_palette[3]), row=2, col=1)
-    fig.add_trace(go.Scatter(x=years, y=net, name='NCF', line=dict(color='black', width=2)), row=2, col=1)
-    fig.add_trace(go.Scatter(x=years, y=cum, name='Cumulative', line=dict(color='purple', dash='dot')), row=2, col=1, secondary_y=True)
-
-    fig.update_layout(height=height, width=width, template='plotly_white', barmode='relative')
-    return fig

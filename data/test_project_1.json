@@ -89,7 +89,7 @@
             "selected_prod": "Base Case",
             "summary": {
                 "total_capex": 11724.3,
-                "total_opex": 323222.75,
+                "total_opex": 26222.75,
                 "total_abex": 1393.0
             },
             "dev_params_info": {
@@ -107,7 +107,7 @@
                         "terminal_cost": 51.0,
                         "PM_others_cost": 10.1,
                         "OPEX_per_bcf": 2.093,
-                        "OPEX_fixed": 10422.6,
+                        "OPEX_fixed": 522.6,
                         "ABEX_per_well": 17.4,
                         "ABEX_FPSO": 114.7,
                         "ABEX_subsea": 14.0,

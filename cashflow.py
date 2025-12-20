@@ -689,6 +689,8 @@ class CashFlow_KOR_Regime:
             if val >= 0:
                 payback = y
                 break
+        if payback is None:
+            payback = self.all_years[-1]
         self.payback = payback
 
         return {

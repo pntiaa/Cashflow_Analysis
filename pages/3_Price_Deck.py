@@ -1,14 +1,15 @@
 import streamlit as st
 import pandas as pd
-from utils import PriceDeck, ensure_state_init, save_project
+from utils import PriceDeck, ensure_state_init, save_project, render_project_sidebar
 import plotly.express as px
 
 st.set_page_config(page_title="Price Deck Setup", layout="wide")
 
 st.title("📈 Oil & Gas Price Setup")
 
-# --- Initialize Session State ---
+# --- Initialize Session State & Sidebar ---
 ensure_state_init()
+render_project_sidebar()
 
 # --- Sidebar Inputs ---
 with st.sidebar:

@@ -4,15 +4,16 @@ import numpy as np
 from production import YearlyProductionProfile
 import plotly.express as px
 import plotly.graph_objects as go
-from utils import ensure_state_init, save_project
+from utils import ensure_state_init, save_project, render_project_sidebar
 import math
 
 st.set_page_config(page_title="Production Profile", layout="wide")
 
 st.title("🛢️ Production Profile & Type Curve")
 
-# --- Initialize Session State ---
+# --- Initialize Session State & Sidebar ---
 ensure_state_init()
+render_project_sidebar()
 
 tab_p1, tab_p2 = st.tabs(["📈 Type Curve", "🏭 Production Profile"])
 
