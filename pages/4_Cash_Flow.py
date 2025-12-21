@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from cashflow import CashFlow_KOR_Regime
 from utils import ensure_state_init, render_project_sidebar
-from plotting import plot_cash_flow_profile_plotly, summary_plot, plot_cf_waterfall_chart, plot_cf_sankey_chart
+from plotting import plot_cashflow, summary_plot, plot_cf_waterfall_chart, plot_cf_sankey_chart
 import io
 
 st.set_page_config(page_title="Cash Flow Analysis", layout="wide")
@@ -105,17 +105,21 @@ if run_button:
     
     col_r1, col_r2 = st.columns([1, 2])
     
+    # Key Metrics Table
     with col_r1:
         st.markdown("### Key Metrics")
-        st.metric("Net Cash Flow (Total)", f"{summ['final_cumulative']:,.1f} MM$")
-        st.metric("NPV (Discounted)", f"{summ['npv']:,.1f} MM$")
-        st.metric("IRR", f"{summ['irr']*100:.1f}%" if isinstance(summ['irr'], (int, float)) else "N/A")
-        st.metric("Payback Year", f"{summ['payback_year']}" if summ['payback_year'] else "N/A")
-        st.metric("Total Revenue", f"{summ['total_revenue']:,.1f} MM$")
-        st.metric("Total CAPEX", f"{summ['total_capex']:,.1f} MM$")
+        col_metrics1, col_metrics2 = st.columns([1, 2])
+        col_metrics1.metric("NPV (Discounted)", f"{summ['npv']:,.0f} MM$")
+        col_metrics1.metric("IRR", f"{summ['irr']*100:.1f}%" if isinstance(summ['irr'], (int, float)) else "N/A")
+        col_metrics1.metric("Payback Year", f"{summ['payback_year']}" if summ['payback_year'] else "N/A")
+        col_metrics2.metric("Total Revenue", f"{summ['total_revenue']:,.0f} MM$")
+        col_metrics2.metric("Total CAPEX", f"{summ['total_capex']:,.0f} MM$")
+        col_metrics2.metric("Net Cash Flow (Total)", f"{summ['final_cumulative']:,.0f} MM$")
 
+    # Plot Cash Flow Chart
     with col_r2:
-        st.plotly_chart(plot_cf_waterfall_chart(cf, height=500), width='content')
+        st.plotly_chart(plot_cashflow(cf), width='content')
+        # st.plotly_chart(plot_cf_waterfall_chart(cf, height=500), width='content')
 
     st.divider()
     st.subheader("📈 Detailed Visualizations")
@@ -124,7 +128,7 @@ if run_button:
     st.plotly_chart(summary_plot(cf), width='stretch')
 
     st.subheader("Cash Flow Profile")
-    st.plotly_chart(plot_cash_flow_profile_plotly(cf), width='stretch')
+    st.plotly_chart(plot_cashflow(cf), width='stretch')
     
     with st.expander("🔗 Cash Flow - Sankey Diagram"):
         st.plotly_chart(plot_cf_sankey_chart(cf, height=700), width='stretch')

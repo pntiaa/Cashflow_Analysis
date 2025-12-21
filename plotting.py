@@ -87,6 +87,7 @@ def plot_cash_flow_profile_plotly(cf, width=1200, height=800):
 def summary_plot(cf, width=1200, height=700):
     years = cf.all_years
     rev = np.array([cf.annual_revenue.get(y, 0.0) for y in years])
+    royalty = np.array([cf.annual_royalty.get(y, 0.0) for y in years])
     cap = np.array([cf.annual_capex.get(y, 0.0) for y in years])
     opx = np.array([cf.annual_opex.get(y, 0.0) for y in years])
     abx = np.array([cf.annual_abex.get(y, 0.0) for y in years])
@@ -128,13 +129,57 @@ def summary_plot(cf, width=1200, height=700):
     # Main Chart
     color_palette = px.colors.qualitative.Set3
     fig.add_trace(go.Bar(x=years, y=rev, name='Revenue', marker_color=color_palette[0]), row=2, col=1)
-    fig.add_trace(go.Bar(x=years, y=-cap, name='CAPEX', marker_color=color_palette[1]), row=2, col=1)
-    fig.add_trace(go.Bar(x=years, y=-opx, name='OPEX', marker_color=color_palette[2]), row=2, col=1)
-    fig.add_trace(go.Bar(x=years, y=-tax, name='Tax', marker_color=color_palette[3]), row=2, col=1)
+    fig.add_trace(go.Bar(x=years, y=-royalty, name='Royalty', marker_color=color_palette[1]), row=2, col=1)
+    fig.add_trace(go.Bar(x=years, y=-cap, name='CAPEX', marker_color=color_palette[2]), row=2, col=1)
+    fig.add_trace(go.Bar(x=years, y=-opx, name='OPEX', marker_color=color_palette[3]), row=2, col=1)
+    fig.add_trace(go.Bar(x=years, y=-abx, name='ABEX', marker_color=color_palette[4]), row=2, col=1)
+    fig.add_trace(go.Bar(x=years, y=-tax, name='Tax', marker_color=color_palette[5]), row=2, col=1)
     fig.add_trace(go.Scatter(x=years, y=net, name='NCF', line=dict(color='black', width=2)), row=2, col=1)
     fig.add_trace(go.Scatter(x=years, y=cum, name='Cumulative', line=dict(color='purple', dash='dot')), row=2, col=1, secondary_y=True)
 
     fig.update_layout(height=height, width=width, template='plotly_white', barmode='relative')
+    return fig
+
+
+def plot_cashflow(cf):
+    years = cf.all_years
+    rev = np.array([cf.annual_revenue.get(y, 0.0) for y in years])
+    royalty = np.array([cf.annual_royalty.get(y, 0.0) for y in years])
+    cap = np.array([cf.annual_capex.get(y, 0.0) for y in years])
+    opx = np.array([cf.annual_opex.get(y, 0.0) for y in years])
+    abx = np.array([cf.annual_abex.get(y, 0.0) for y in years])
+    tax = np.array([cf.annual_total_tax.get(y, 0.0) for y in years])
+    net = np.array([cf.annual_net_cash_flow.get(y, 0.0) for y in years])
+    cum = np.array([cf.cumulative_cash_flow.get(y, 0.0) for y in years])
+
+
+    fig = make_subplots(
+        rows=1, cols=1,
+        subplot_titles=("Annual & Cumulative Cash Flow"),
+        specs=[
+            [{"type": "xy", "secondary_y": True}],
+        ],
+    )
+    # Main Chart
+    color_palette = px.colors.qualitative.Set3
+    fig.add_trace(go.Bar(x=years, y=rev, name='Revenue', marker_color=color_palette[0]), row=1, col=1)
+    fig.add_trace(go.Bar(x=years, y=-royalty, name='Royalty', marker_color=color_palette[1]), row=1, col=1)
+    fig.add_trace(go.Bar(x=years, y=-cap, name='CAPEX', marker_color=color_palette[2]), row=1, col=1)
+    fig.add_trace(go.Bar(x=years, y=-opx, name='OPEX', marker_color=color_palette[3]), row=1, col=1)
+    fig.add_trace(go.Bar(x=years, y=-abx, name='ABEX', marker_color=color_palette[4]), row=1, col=1)
+    fig.add_trace(go.Bar(x=years, y=-tax, name='Tax', marker_color=color_palette[5]), row=1, col=1)
+    fig.add_trace(go.Scatter(x=years, y=net, name='NCF', line=dict(color='black', width=2)), row=1, col=1)
+    fig.add_trace(go.Scatter(x=years, y=cum, name='Cumulative', line=dict(color='purple', dash='dot')), row=1, col=1, secondary_y=True)
+
+    y_max = max(max(rev), max(cap+royalty+opx+abx+tax)) * 1.1
+    y2_max = max(abs(cum)) * 1.1
+
+    fig.update_layout(
+        template='plotly_white', 
+        barmode='relative',
+        yaxis=dict(range=[-y_max, y_max]),
+        yaxis2=dict(range=[-y2_max, y2_max], overlaying='y', side='right')
+    )
     return fig
 
 
