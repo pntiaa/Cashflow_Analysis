@@ -1,8 +1,8 @@
 import streamlit as st
 import pandas as pd
-from cashflow import CashFlow_KOR_Regime
+from cashflow import CashFlowKOR
 from utils import ensure_state_init, render_project_sidebar
-from plotting import plot_cashflow, summary_plot, plot_cf_waterfall_chart, plot_cf_sankey_chart
+from plotting import plot_cashflow, summary_plot, plot_cf_sankey_chart
 import io
 
 st.set_page_config(page_title="Cash Flow Analysis", layout="wide")
@@ -58,7 +58,7 @@ if run_button:
     dev_obj = d_case['dev_obj']
 
     # Setup Cash Flow Instance
-    cf = CashFlow_KOR_Regime(
+    cf = CashFlowKOR(
         base_year=base_year,
         oil_price_by_year=s_case['oil'],
         gas_price_by_year=s_case['gas'],

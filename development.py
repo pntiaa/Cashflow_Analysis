@@ -1,7 +1,16 @@
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
-import copy
 from typing import Dict, Optional, List # Ensure List is imported
+
+# decorator for rounding
+def rounding(func):
+    def wrapper(**kwargs) -> Dict[int, float]:
+        price_by_year = func(**kwargs)
+        if not isinstance(price_by_year, dict):
+            raise TypeError("The decorated function must return Dict[int, float].")
+        return {year: round(price, 2) for year, price in price_by_year.items()}
+    return wrapper
 
 class DevelopmentCost:
     def __init__(self,
@@ -92,6 +101,23 @@ class DevelopmentCost:
     @staticmethod
     def _rounding_dict_values(d: Dict[int, float]) -> Dict[int, float]:
         return {year: round(value, 2) for year, value in d.items()}
+    # ---------------------------
+    # 타임라인 구축 헬퍼 함수
+    # ---------------------------
+    def _build_full_timeline(self):
+        """
+        - 개발 및 생산 연도를 포함하는 전체 연도(`self.all_years`)를 구축.
+        - 개발 딕셔너리를 정렬하고 누락된 부분을 0으로 채워 `self.annual_capex/opex/abex`를 채움.
+        """
+        years = set(self.cost_years.keys())
+        years |= set(self.oil_production_by_year.keys())
+        years |= set(self.gas_production_by_year.keys())
+        years |= set(self.annual_capex.keys())
+        years |= set(self.annual_opex.keys())
+        years |= set(self.annual_abex.keys())
+
+        if len(years) == 0:
+            raise ValueError("연도를 찾을 수 없습니다 (개발 또는 생산)")
 
     # -----------------------
     # Schedule setter
@@ -107,34 +133,29 @@ class DevelopmentCost:
             print(f"[exploration] Cumulative wells by year: {self.cumulative_well_count}")
 
 
-    def set_drilling_schedule(self, drill_start_year, yearly_drilling_schedule: Dict[int, int], already_shifted: bool = False, output=True):
+    def set_drilling_schedule(self, drill_start_year, yearly_drilling_schedule: Dict[int, int], output=True):
         """
         yearly_drilling_schedule: dict {year: wells}
-        If already_shifted is True, the keys are already actual years.
         This function sorts years, computes cumulative wells and sets related attributes.
         """
         self.drill_start_year = drill_start_year
         if not isinstance(yearly_drilling_schedule, dict):
             raise ValueError("yearly_drilling_schedule must be a dict {year: wells}")
-        
-        if already_shifted:
-            self.yearly_drilling_schedule = {int(k): v for k, v in yearly_drilling_schedule.items()}
-        else:
-            if self.drill_start_year < self.dev_start_year:
-                raise ValueError(f"drill_start_year({drill_start_year}) should be later than dev_start_year({self.dev_start_year})")
-            for y_idx, num_wells in yearly_drilling_schedule.items():
-                self.yearly_drilling_schedule[int(y_idx)+self.drill_start_year] = num_wells
+        if self.drill_start_year < self.dev_start_year:
+            raise ValueError(f"dev_start_year({drill_start_year}) should be later than dev_start_year({dev_start_year})")
+
+        # make a shallow copy and sort years
+        for y_idx, num_wells in yearly_drilling_schedule.items():
+            self.yearly_drilling_schedule[y_idx+self.drill_start_year] = num_wells
         # self.yearly_drilling_schedule = copy.deepcopy(yearly_drilling_schedule)
 
         # self.cost_years = sorted(list(self.yearly_drilling_schedule.keys())) dev_start_year가 더 빠를경우 오류생길 수 있음
-        last_drill_year = sorted(self.yearly_drilling_schedule.keys())[-1]
-        self.cost_years = sorted(list(range(self.dev_start_year, last_drill_year + 1)))
-
+        self.cost_years = sorted(list(range(self.dev_start_year, list(self.yearly_drilling_schedule.keys())[-1],1)))
         if len(self.cost_years) == 0:
             raise ValueError("yearly_drilling_schedule must contain at least one year")
 
         # self.drill_start_year = self.cost_years[0]
-        self.total_development_years = len(self.cost_years)
+        ㅊ = len(self.cost_years)
 
         # cumulative well count at end of each development year
         cum = 0
@@ -143,27 +164,30 @@ class DevelopmentCost:
             cum += int(self.yearly_drilling_schedule.get(y, 0))
             self.cumulative_well_count[y] = cum
         if output:
-            print(f"[schedule] Drilling schedule set ({self.total_development_years} years): {self.yearly_drilling_schedule}")
+            # print(f"[schedule] Drilling schedule set ({self.total_development_years} years): {self.yearly_drilling_schedule}")
+            print(f"[schedule] Drilling schedule set ({len([k for k, v in self.yearly_drilling_schedule.items() if v >0])} years): {self.yearly_drilling_schedule}")
             print(f"[schedule] Cumulative wells by year: {self.cumulative_well_count}")
             print(f"[schedule] Drill period: {self.drill_start_year} - {self.cost_years[-1]}")
             print(f"[schedule] Total wells: {self.cumulative_well_count[self.cost_years[-1]]}")
 
-    def set_annual_production(self, annual_gas_production: Dict[int, float], annual_oil_production: Dict[int, float], already_shifted: bool = False, output=True):
-        if already_shifted:
-            self.annual_gas_production = {int(k): v for k, v in annual_gas_production.items()}
-            self.annual_oil_production = {int(k): v for k, v in annual_oil_production.items()}
-        else:
-            for y_idx, value in annual_gas_production.items():
-                self.annual_gas_production[int(y_idx)+self.drill_start_year] = value
+    def set_annual_production(self, annual_gas_production: Dict[int, float], annual_oil_production: Dict[int, float], output=True):
+        for y_idx, value in annual_gas_production.items():
+            self.annual_gas_production[y_idx+self.drill_start_year] = value
 
-            for y_idx, value in annual_oil_production.items():
-                self.annual_oil_production[int(y_idx)+self.drill_start_year] = value
+        for y_idx, value in annual_oil_production.items():
+            self.annual_oil_production[y_idx+self.drill_start_year] = value
 
         self.production_years = list(self.annual_gas_production.keys())
         # Calculate _total_production_duration based on years with production > 0
-        self._total_production_duration = sum(1 for year, prod in self.annual_gas_production.items() if prod > 0)
+        self._total_production_duration = sum(1 for year, prod in annual_gas_production.items() if prod > 0)
         self.total_gas_production = self._sum_dict_values(self.annual_gas_production)
         self.total_oil_production = self._sum_dict_values(self.annual_oil_production)
+
+        # cost_year 업데이트
+        years = set(self.cost_years)
+        years |= set(self.annual_gas_production.keys())
+        years |= set(self.annual_oil_production.keys())
+        self.cost_years = list(years)
 
         if output:
             print(f"[set_annual_production] Active production duration: {self._total_production_duration} years")
@@ -248,7 +272,8 @@ class DevelopmentCost:
 
         total = feas + concept + feed + eia
         if output:
-            print(f"[study] timing={timing}, total_study_cost={total} -> study dict keys: {list(self.feasability_study_cost.keys())}")
+            print(f"[study] timing={timing}, total_study_cost={total} -> study : {self.feasability_study_cost}")
+            # print(f"[study] timing={timing}, total_study_cost={total} -> study dict keys: {list(self.feasability_study_cost.keys())}")
             return {
                 'feasability': self.feasability_study_cost,
                 'concept': self.concept_study_cost,
@@ -388,13 +413,20 @@ class DevelopmentCost:
 
         annual_abex[actual_last_project_year] = total_abex
 
+        # cost years update
+        years = set(self.cost_years)
+        years |= set(self.annual_gas_production.keys())
+        years |= set(self.annual_oil_production.keys())
+        years |= set(self.annual_abex.keys())
+        self.cost_years = list(years)
+
         self.annual_abex = dict(sorted(annual_abex.items()))
         if output:
             print(f"[abex] total_abex={total_abex:,.2f} booked in year {actual_last_project_year}")
             return self.annual_abex
 
     # -----------------------
-    # Total costs and plotting
+    # Total costs
     # -----------------------
     def calculate_total_costs(self, production_years: int = 30, study_timing: str = 'year_0', facility_timing: str = 'year_1', output=True) -> Dict[str, object]:
         """
@@ -490,86 +522,158 @@ class DevelopmentCost:
                 'total_project_cost': total_project_cost
             }
 
-    def plot_cost_profile(self, show: bool = True):
-        """
-        Plot annual capex/opex/abex stacked bar and cumulative curve.
-        Relies on self.total_annual_costs, self.annual_capex, self.annual_opex, self.annual_abex being present.
-        """
-        if not self.total_annual_costs:
-            raise ValueError("Costs not calculated. Run calculate_total_costs() first.")
 
-        years = sorted(self.total_annual_costs.keys())
-        capex_vals = [self.annual_capex.get(y, 0.0) for y in years]
-        opex_vals = [self.annual_opex.get(y, 0.0) for y in years]
-        abex_vals = [self.annual_abex.get(y, 0.0) for y in years]
-        total_vals = [self.total_annual_costs.get(y, 0.0) for y in years]
-        cum_vals = [self.cumulative_costs.get(y, 0.0) for y in years]
+class QuestorDevelopmentCost(DevelopmentCost):
+    def __init__(self, dev_start_year: int, excel_file_path: str, sheet_name: str):
+        # 부모 클래스 초기화
+        super().__init__(dev_start_year=dev_start_year, dev_param={}, development_case='QUE$TOR_Final')
+        self.questor_raw: Dict = {}  # 로딩된 원본 데이터를 확인할 수 있도록 속성 추가
+        self.load_questor_file(excel_file_path, sheet_name)
 
-        # Plot 1: stacked bars
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 6))
+    def _find_keyword(self, df: pd.DataFrame, keyword: str, row_idx: Optional[int] = None, col_idx: Optional[int] = None):
+        """특정 키워드가 있는 (행, 열) 인덱스를 반환 (특정 행 또는 열 지정 가능)"""
+        target = keyword.strip().upper()
+        
+        if row_idx is not None:
+            mask = df.iloc[row_idx, :].apply(lambda x: str(x).strip().upper() == target)
+            return (row_idx, np.where(mask)[0][0]) if mask.any() else (None, None)
+        
+        if col_idx is not None:
+            mask = df.iloc[:, col_idx].apply(lambda x: str(x).strip().upper() == target)
+            return (np.where(mask)[0][0], col_idx) if mask.any() else (None, None)
 
-        ax1.bar(years, capex_vals, label='CAPEX')
-        ax1.bar(years, opex_vals, bottom=capex_vals, label='OPEX')
-        bottom_for_abex = [c + o for c, o in zip(capex_vals, opex_vals)]
-        ax1.bar(years, abex_vals, bottom=bottom_for_abex, label='ABEX')
-        ax1.set_xlabel('Year')
-        ax1.set_ylabel('Cost (MM$)')
-        ax1.set_title(f'Annual Cost Profile - {self.development_case}')
-        y_max = max(bottom_for_abex)*1.2
-        y_max_digit = int(np.log10(y_max))
-        y_max_grid = np.round(y_max, y_max_digit*-1)
-        ax1.set_yticks(np.linspace(0,y_max_grid, 6))
-        ax1.legend()
-        ax1.grid(True, alpha=0.3)
+        mask = df.map(lambda x: str(x).strip().upper() == target)
+        if mask.any().any():
+            r, c = np.where(mask)
+            return r[0], c[0]
+        return None, None
 
-        # Plot 3: drilled wells
-        ax3 = ax1.twinx()
-        # Align drilled_wells with the full timeline (years)
-        drilled_wells_aligned = [self.yearly_drilling_schedule.get(y, 0) for y in years]
-        ax3.plot(years, drilled_wells_aligned, marker='o', color='blue', label='Drilled Wells')
-        ax3.set_ylabel('Drilled Wells', color='blue')
-        ax3.tick_params(axis='y', labelcolor='blue')
-        ax3.legend(loc='upper right')
-        y_max = max(drilled_wells_aligned)*2
-        ax3.set_yticks(np.arange(0, y_max, 2))
+    def _generate_headers(self, header_df: pd.DataFrame) -> List[str]:
+        """다중 행 헤더에서 숫자를 제외하고 가장 아래쪽 텍스트를 선택하여 헤더 생성"""
+        new_headers = []
+        for c in range(header_df.shape[1]):
+            col_data = header_df.iloc[:, c].dropna().astype(str).tolist()
+            # 숫자가 포함된 데이터 제외 및 공백 제거
+            filtered = [t.strip() for t in col_data if not any(char.isdigit() for char in t) and t.strip()]
+            
+            # 상하 텍스트 중 하단 텍스트만 선택 (결합 로직 대체)
+            if filtered:
+                title = filtered[-1]
+            else:
+                title = f"Unknown_{c}"
+            new_headers.append(title)
+            
+        if new_headers:
+            new_headers[0] = "Year" # 첫 열 강제 지정
+        return new_headers
 
-        # Plot 2: cumulative
-        ax2.plot(years, cum_vals, marker='o', linestyle='-')
-        ax2.fill_between(years, cum_vals, alpha=0.2)
-        ax2.set_xlabel('Year')
-        ax2.set_ylabel('Cumulative Cost (MM$)')
-        ax2.set_title('Cumulative Cost')
-        ax2.grid(True, alpha=0.3)
-        ax2.annotate(f'Total: {cum_vals[-1]:.2f} MM', xy=(years[-1], cum_vals[-1]), xytext=(10, 10),
-                     textcoords='offset points',
-                     bbox=dict(boxstyle='round,pad=0.3', facecolor='yellow', alpha=0.7),
-                     arrowprops=dict(arrowstyle='->', connectionstyle='arc3,rad=0'))
+    def _get_sum_of_columns(self, q_dict: Dict, keywords: List[str], category: str = "") -> Dict[int, float]:
+            """합산 로직 디버깅 메시지 추가"""
+            if not q_dict: return {}
 
-        plt.tight_layout()
-        if show:
-            plt.show()
+            any_key = list(q_dict.keys())[0]
+            combined_values = {y: 0.0 for y in q_dict[any_key].keys()}
+            found_cols = []
 
-    def plot_total_annual_costs(self, show: bool = True):
-        """
-        Plots the total annual costs as a bar chart.
-        """
-        if not self.total_annual_costs:
-            raise ValueError("Total annual costs have not been calculated. Call calculate_total_costs() first.")
+            for col_name, yearly_data in q_dict.items():
+                if any(kw.upper() in col_name.upper() for kw in keywords):
+                    # ❗주의: 이미지상 'Total' 열이 Opex 합계를 이미 가지고 있다면 상세 항목 합산과 충돌할 수 있음
+                    # 만약 상세 항목만 더하고 싶다면 "TOTAL" 제외 로직 유지
+                    if "TOTAL" not in col_name.upper():
+                        for y, val in yearly_data.items():
+                            combined_values[y] += val
+                        found_cols.append(col_name)
 
-        years = list(self.total_annual_costs.keys())
-        costs = list(self.total_annual_costs.values())
+            if category:
+                print(f"  [{category}] 매핑된 컬럼: {found_cols}")
+            return combined_values
 
-        plt.figure(figsize=(12, 6))
-        plt.bar(years, costs, color='skyblue')
-        plt.xlabel('Year')
-        plt.ylabel('Total Annual Costs (MM$)')
-        plt.title('Total Annual Project Costs')
-        plt.grid(axis='y', linestyle='--', alpha=0.7)
-        plt.xticks(rotation=45)
-        plt.tight_layout()
-        if show:
-            plt.show()
+    def load_questor_file(self, excel_file_path: str, sheet_name: str):
+        """전체 로드 프로세스"""
+        try:
+            # 1. 시트 전체 로드 (메모 포함)
+            full_df = pd.read_excel(excel_file_path, sheet_name=sheet_name, header=None)
 
+            # 2. 주요 앵커 위치 탐색
+            anchor_row, anchor_col = self._find_keyword(full_df, "Year")
+            # Year와 동일한 열(Column)에서 Total을 찾음
+            total_row, _ = self._find_keyword(full_df, "TOTAL", col_idx=anchor_col)
+
+            if anchor_row is None or total_row is None:
+                raise ValueError("필수 키워드(Year 또는 TOTAL)를 시트에서 찾을 수 없습니다.")
+
+            # 3. 유효 열 범위 확정 (A열부터 데이터가 끝나는 열까지)
+            valid_cols_mask = full_df.iloc[total_row].notna() # anchor row에서 찾으면 year에서 찾으니깐, total row에서 찾기
+            last_col_idx = valid_cols_mask[valid_cols_mask].index[-1]
+
+            # 4. 헤더 생성 및 데이터 추출
+            ## iloc으로 추출하면 마지막행은 추출되지 않으므로 last_col_idx+1까지 지정해야 전체 지정됨
+            header_range = full_df.iloc[anchor_row : total_row, anchor_col : last_col_idx+1]
+            cleaned_titles = self._generate_headers(header_range)
+            data_part = full_df.iloc[total_row + 1 :, anchor_col : last_col_idx + 1].copy()
+            data_part.columns = cleaned_titles
+
+            # 5. 데이터 정제 (숫자 행만 남기기)
+            data_part = (
+                data_part[pd.to_numeric(data_part['Year'], errors='coerce').notna()]
+                .set_index('Year')
+                .apply(pd.to_numeric, errors='coerce')
+                .fillna(0)
+            )
+            # 6. 'TOTAL' 열 제거
+            data_part = data_part.drop(columns=[c for c in data_part.columns if c.upper() == 'TOTAL'], errors='ignore')
+
+            # 로딩된 전체 데이터를 인스턴스 변수에 저장
+            self.questor_raw = data_part.to_dict(orient='dict')
+
+            # 6. 내부 속성 매핑
+            self._set_annual_production(self.questor_raw)
+            self._set_annual_costs(self.questor_raw)
+            self.update_summary_metrics()
+
+            print(f"✅ QUE$TOR 데이터 로드 성공: {len(data_part)}개 연도 감지")
+            print(f"📌 확인 가능한 전체 컬럼 리스트: {list(self.questor_raw.keys())}")
+
+        except Exception as e:
+            print(f"❌ 로드 중 오류 발생: {e}")
+
+    def _set_annual_costs(self, questor_dict: Dict, output=True):
+        dev_start = self.dev_start_year
+        # 키워드 기반 유연한 합산 매핑
+        capex_raw = self._get_sum_of_columns(questor_dict, ['PROJECT', 'Facilities', 'Pipelines'], "CAPEX")
+        opex_raw = self._get_sum_of_columns(questor_dict, ['OPEX','Fixed OPEX', 'Variable OPEX', 'Tariffs', 'Leases'], "OPEX")
+        abex_raw = self._get_sum_of_columns(questor_dict, ['DECOMM','DECOMM.'], "ABEX")
+
+        for k, v in capex_raw.items(): self.annual_capex[k + dev_start] = v
+        for k, v in opex_raw.items(): self.annual_opex[k + dev_start] = v
+        for k, v in abex_raw.items(): self.annual_abex[k + dev_start] = v
+
+        self.cost_years = sorted(set(self.annual_capex.keys()) | set(self.annual_opex.keys()) | set(self.annual_abex.keys()))
+
+    def _set_annual_production(self, questor_dict: Dict, output=True):
+            dev_start = self.dev_start_year
+            gas_raw = self._get_sum_of_columns(questor_dict, ['Gas Bscf'], "GAS")
+            oil_raw = self._get_sum_of_columns(questor_dict, ['Oil MMbbl', 'Cond. MMbbl'], "OIL")
+
+            for k, v in gas_raw.items(): self.annual_gas_production[k + dev_start] = v
+            for k, v in oil_raw.items(): self.annual_oil_production[k + dev_start] = v
+            self.production_years = sorted(list(self.annual_gas_production.keys()))
+
+    def update_summary_metrics(self):
+        """매핑된 데이터를 기반으로 합계 지표 업데이트"""
+        self.total_capex = sum(self.annual_capex.values())
+        self.total_opex = sum(self.annual_opex.values())
+        self.total_abex = sum(self.annual_abex.values())
+
+        all_years = sorted(self.cost_years)
+        self.total_annual_costs = {y: self.annual_capex.get(y, 0) + self.annual_opex.get(y, 0) + self.annual_abex.get(y, 0)
+                                   for y in all_years}
+
+        cum = 0.0
+        self.cumulative_costs = {}
+        for y in all_years:
+            cum += self.total_annual_costs[y]
+            self.cumulative_costs[y] = cum
 
 if __name__ == "__main__":
     pass    

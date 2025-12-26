@@ -6,6 +6,88 @@ import plotly.express as px
 from typing import Dict, List
 from matplotlib import colors as mcolors # HEX 코드를 RGB로 변환하기 위해 사용
 
+
+# DevelopmentCost class plotting functions
+def plot_cost_profile(dev_cost, show: bool = True):
+    """
+    Plot annual capex/opex/abex stacked bar and cumulative curve using Plotly.
+    Relies on dev_cost.total_annual_costs, dev_cost.annual_capex, dev_cost.annual_opex, dev_cost.annual_abex being present.
+    """
+    if not dev_cost.total_annual_costs:
+        raise ValueError("Costs not calculated. Run calculate_total_costs() first.")
+
+    years = sorted(dev_cost.total_annual_costs.keys())
+    capex_vals = [dev_cost.annual_capex.get(y, 0.0) for y in years]
+    opex_vals = [dev_cost.annual_opex.get(y, 0.0) for y in years]
+    abex_vals = [dev_cost.annual_abex.get(y, 0.0) for y in years]
+    total_vals = [dev_cost.total_annual_costs.get(y, 0.0) for y in years]
+    cum_vals = [dev_cost.cumulative_costs.get(y, 0.0) for y in years]
+
+    # Plot 1: stacked bars
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 6))
+
+    ax1.bar(years, capex_vals, label='CAPEX')
+    ax1.bar(years, opex_vals, bottom=capex_vals, label='OPEX')
+    bottom_for_abex = [c + o for c, o in zip(capex_vals, opex_vals)]
+    ax1.bar(years, abex_vals, bottom=bottom_for_abex, label='ABEX')
+    ax1.set_xlabel('Year')
+    ax1.set_ylabel('Cost (MM$)')
+    ax1.set_title(f'Annual Cost Profile - {self.development_case}')
+    y_max = max(bottom_for_abex)*1.2
+    y_max_digit = int(np.log10(y_max))
+    y_max_grid = np.round(y_max, y_max_digit*-1)
+    ax1.set_yticks(np.linspace(0,y_max_grid, 6))
+    ax1.legend()
+    ax1.grid(True, alpha=0.3)
+
+    # Plot 3: drilled wells
+    ax3 = ax1.twinx()
+    # Align drilled_wells with the full timeline (years)
+    drilled_wells_aligned = [self.yearly_drilling_schedule.get(y, 0) for y in years]
+    ax3.plot(years, drilled_wells_aligned, marker='o', color='blue', label='Drilled Wells')
+    ax3.set_ylabel('Drilled Wells', color='blue')
+    ax3.tick_params(axis='y', labelcolor='blue')
+    ax3.legend(loc='upper right')
+    y_max = max(drilled_wells_aligned)*2
+    ax3.set_yticks(np.arange(0, y_max, 2))
+
+    # Plot 2: cumulative
+    ax2.plot(years, cum_vals, marker='o', linestyle='-')
+    ax2.fill_between(years, cum_vals, alpha=0.2)
+    ax2.set_xlabel('Year')
+    ax2.set_ylabel('Cumulative Cost (MM$)')
+    ax2.set_title('Cumulative Cost')
+    ax2.grid(True, alpha=0.3)
+    ax2.annotate(f'Total: {cum_vals[-1]:.2f} MM', xy=(years[-1], cum_vals[-1]), xytext=(10, 10),
+                    textcoords='offset points',
+                    bbox=dict(boxstyle='round,pad=0.3', facecolor='yellow', alpha=0.7),
+                    arrowprops=dict(arrowstyle='->', connectionstyle='arc3,rad=0'))
+
+    plt.tight_layout()
+    if show:
+        plt.show()
+
+def plot_total_annual_costs(dev_cost, show: bool = True):
+    """
+    Plots the total annual costs as a bar chart.
+    """
+    if not dev_cost.total_annual_costs:
+        raise ValueError("Total annual costs have not been calculated. Call calculate_total_costs() first.")
+
+    years = list(self.total_annual_costs.keys())
+    costs = list(self.total_annual_costs.values())
+
+    plt.figure(figsize=(6, 4))
+    plt.bar(years, costs, color='skyblue')
+    plt.xlabel('Year')
+    plt.ylabel('Total Annual Costs (MM$)')
+    plt.title('Total Annual Project Costs')
+    plt.grid(axis='y', linestyle='--', alpha=0.7)
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+    if show:
+        plt.show()
+
 def get_rgba_from_hex(hex_or_rgb_code, alpha=0.5):
     """
     HEX 또는 RGB 색상 코드를 받아 지정된 투명도(alpha)가 적용된 RGBA 문자열을 반환합니다.
@@ -22,7 +104,6 @@ def get_rgba_from_hex(hex_or_rgb_code, alpha=0.5):
         r = int(rgb_float[0] * 255)
         g = int(rgb_float[1] * 255)
         b = int(rgb_float[2] * 255)
-
     return f'rgba({r}, {g}, {b}, {alpha})'
 
     
