@@ -133,7 +133,7 @@ class DevelopmentCost:
             print(f"[exploration] Cumulative wells by year: {self.cumulative_well_count}")
 
 
-    def set_drilling_schedule(self, drill_start_year, yearly_drilling_schedule: Dict[int, int], output=True):
+    def set_drilling_schedule(self, drill_start_year, yearly_drilling_schedule: Dict[int, int], already_shifted=False, output=True):
         """
         yearly_drilling_schedule: dict {year: wells}
         This function sorts years, computes cumulative wells and sets related attributes.
@@ -142,11 +142,12 @@ class DevelopmentCost:
         if not isinstance(yearly_drilling_schedule, dict):
             raise ValueError("yearly_drilling_schedule must be a dict {year: wells}")
         if self.drill_start_year < self.dev_start_year:
-            raise ValueError(f"dev_start_year({drill_start_year}) should be later than dev_start_year({dev_start_year})")
+            raise ValueError(f"dev_start_year({drill_start_year}) should be later than dev_start_year({self.dev_start_year})")
 
         # make a shallow copy and sort years
+        shift = 0 if already_shifted else self.drill_start_year
         for y_idx, num_wells in yearly_drilling_schedule.items():
-            self.yearly_drilling_schedule[y_idx+self.drill_start_year] = num_wells
+            self.yearly_drilling_schedule[y_idx + shift] = num_wells
         # self.yearly_drilling_schedule = copy.deepcopy(yearly_drilling_schedule)
 
         # self.cost_years = sorted(list(self.yearly_drilling_schedule.keys())) dev_start_year가 더 빠를경우 오류생길 수 있음
@@ -154,8 +155,7 @@ class DevelopmentCost:
         if len(self.cost_years) == 0:
             raise ValueError("yearly_drilling_schedule must contain at least one year")
 
-        # self.drill_start_year = self.cost_years[0]
-        ㅊ = len(self.cost_years)
+        self.total_development_years = len(self.cost_years)
 
         # cumulative well count at end of each development year
         cum = 0
@@ -170,12 +170,13 @@ class DevelopmentCost:
             print(f"[schedule] Drill period: {self.drill_start_year} - {self.cost_years[-1]}")
             print(f"[schedule] Total wells: {self.cumulative_well_count[self.cost_years[-1]]}")
 
-    def set_annual_production(self, annual_gas_production: Dict[int, float], annual_oil_production: Dict[int, float], output=True):
+    def set_annual_production(self, annual_gas_production: Dict[int, float], annual_oil_production: Dict[int, float], already_shifted=False, output=True):
+        shift = 0 if already_shifted else self.drill_start_year
         for y_idx, value in annual_gas_production.items():
-            self.annual_gas_production[y_idx+self.drill_start_year] = value
+            self.annual_gas_production[y_idx + shift] = value
 
         for y_idx, value in annual_oil_production.items():
-            self.annual_oil_production[y_idx+self.drill_start_year] = value
+            self.annual_oil_production[y_idx + shift] = value
 
         self.production_years = list(self.annual_gas_production.keys())
         # Calculate _total_production_duration based on years with production > 0
@@ -470,9 +471,10 @@ class DevelopmentCost:
         conc = ensure_keys(self.concept_study_cost, years)
         feed = ensure_keys(self.FEED_cost, years)
         eia = ensure_keys(self.EIA_cost, years)
+        explo = ensure_keys(self.exploration_costs if self.exploration_costs else {}, years)
 
         # sum CAPEX by year
-        self.annual_capex = {y: drilling[y] + subsea[y] + fps[y] + export[y] + term[y] + pm[y] + feas[y] + conc[y] + feed[y] + eia[y] for y in years}
+        self.annual_capex = {y: drilling[y] + subsea[y] + fps[y] + export[y] + term[y] + pm[y] + feas[y] + conc[y] + feed[y] + eia[y] + explo[y] for y in years}
         self.total_capex = self._sum_dict_values(self.annual_capex)
 
         # OPEX and ABEX
@@ -521,6 +523,36 @@ class DevelopmentCost:
                 'total_abex': self.total_abex,
                 'total_project_cost': total_project_cost
             }
+
+    def get_cost_breakdown(self) -> Dict[str, object]:
+        """
+        Returns a breakdown of CAPEX, OPEX, and ABEX components.
+        """
+        all_years = sorted(list(set(self.annual_capex.keys()) | set(self.annual_opex.keys()) | set(self.annual_abex.keys())))
+        
+        # Ensure all components cover the full timeline
+        def ensure_keys(d: Dict[int, float], keys: List[int]) -> Dict[int, float]:
+            return {k: float(d.get(k, 0.0)) for k in keys}
+
+        capex_breakdown = {
+            'exploration': ensure_keys(self.exploration_costs if self.exploration_costs else {}, all_years),
+            'drilling': ensure_keys(self.drilling_costs, all_years),
+            'subsea': ensure_keys(self.subsea_costs, all_years),
+            'FPSO': ensure_keys(self.FPSO_cost, all_years),
+            'export_pipeline': ensure_keys(self.export_pipeline_cost, all_years),
+            'terminal': ensure_keys(self.terminal_cost, all_years),
+            'PM_others': ensure_keys(self.PM_others_cost, all_years),
+            'feasibility_study': ensure_keys(self.feasability_study_cost, all_years),
+            'concept_study': ensure_keys(self.concept_study_cost, all_years),
+            'FEED': ensure_keys(self.FEED_cost, all_years),
+            'EIA': ensure_keys(self.EIA_cost, all_years),
+        }
+        
+        return {
+            'capex_breakdown': capex_breakdown,
+            'annual_opex': self.annual_opex,
+            'annual_abex': self.annual_abex
+        }
 
 
 class QuestorDevelopmentCost(DevelopmentCost):

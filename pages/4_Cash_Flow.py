@@ -44,6 +44,7 @@ with st.expander("⚙️ Global Economic Parameters"):
         exchange_rate = st.number_input("Exchange Rate (KRW/USD)", value=1350.0)
         cost_inflation = st.number_input("Cost Inflation Rate", value=0.015)
     with col_e3:
+        depreciation_method = st.selectbox("Depreciation Method", ["Unit of Production", "Straight Line", "Declining Balance"], index=0)
         useful_life = st.number_input("Useful Life (Depreciation)", value=10)
 
 # --- Run Button ---
@@ -139,7 +140,9 @@ if run_button:
         detail_df = pd.DataFrame({
             'Year': years,
             'Oil Price': [cf.oil_price_by_year.get(y,0.0) for y in years],
-            'Gas Production': [cf.gas_production_by_year.get(y,0.0) for y in years],
+            'Gas Price': [cf.gas_price_by_year.get(y,0.0) for y in years],
+            'Oil Production': [cf.annual_oil_production.get(y,0.0) for y in years],
+            'Gas Production': [cf.annual_gas_production.get(y,0.0) for y in years],
             'Revenue': [cf.annual_revenue.get(y,0.0) for y in years],
             'Royalty': [cf.annual_royalty.get(y,0.0) for y in years],
             'CAPEX': [cf.annual_capex.get(y,0.0) for y in years],
