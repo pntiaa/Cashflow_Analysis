@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from cashflow import CashFlowKOR
 from utils import ensure_state_init, render_project_sidebar
-from plotting import plot_cashflow, summary_plot, plot_cf_sankey_chart
+from plotting import plot_cashflow, summary_plot, plot_cf_sankey_chart, plot_cf_waterfall_chart
 import io
 
 st.set_page_config(page_title="Cash Flow Analysis", layout="wide")
@@ -109,28 +109,41 @@ if run_button:
     # Key Metrics Table
     with col_r1:
         st.markdown("### Key Metrics")
-        col_metrics1, col_metrics2 = st.columns([1, 2])
-        col_metrics1.metric("NPV (Discounted)", f"{summ['npv']:,.0f} MM$")
-        col_metrics1.metric("IRR", f"{summ['irr']*100:.1f}%" if isinstance(summ['irr'], (int, float)) else "N/A")
-        col_metrics1.metric("Payback Year", f"{summ['payback_year']}" if summ['payback_year'] else "N/A")
-        col_metrics2.metric("Total Revenue", f"{summ['total_revenue']:,.0f} MM$")
-        col_metrics2.metric("Total CAPEX", f"{summ['total_capex']:,.0f} MM$")
-        col_metrics2.metric("Net Cash Flow (Total)", f"{summ['final_cumulative']:,.0f} MM$")
+        # col_metrics1, col_metrics2 = st.columns([1, 1])
+        # col_metrics1.metric("NPV (Discounted)", f"{summ['npv']:,.0f} MM$")
+        # col_metrics1.metric("IRR", f"{summ['irr']*100:.1f}%" if isinstance(summ['irr'], (int, float)) else "N/A")
+        # col_metrics1.metric("Payback Year", f"{summ['payback_year']}" if summ['payback_year'] else "N/A")
+        # col_metrics2.metric("Total Revenue", f"{summ['total_revenue']:,.0f} MM$")
+        # col_metrics2.metric("Total CAPEX", f"{summ['total_capex']:,.0f} MM$")
+        # col_metrics2.metric("Net Cash Flow (Total)", f"{summ['final_cumulative']:,.0f} MM$")
+        st.metric("NPV (Discounted)", f"{summ['npv']:,.0f} MM$")
+        st.metric("IRR", f"{summ['irr']*100:.1f}%" if isinstance(summ['irr'], (int, float)) else "N/A")
+        st.metric("Payback Year", f"{summ['payback_year']}" if summ['payback_year'] else "N/A")
+        st.metric("Total Revenue", f"{summ['total_revenue']:,.0f} MM$")
+        st.metric("Total CAPEX", f"{summ['total_capex']:,.0f} MM$")
+        st.metric("Net Cash Flow (Total)", f"{summ['final_cumulative']:,.0f} MM$")
 
     # Plot Cash Flow Chart
     with col_r2:
-        st.plotly_chart(plot_cashflow(cf), width='content')
-        # st.plotly_chart(plot_cf_waterfall_chart(cf, height=500), width='content')
+        st.markdown("### Cash Flow Distribution")
+        # st.plotly_chart(plot_cashflow(cf), width='content')
+        st.plotly_chart(plot_cf_waterfall_chart(cf), width='content')
 
     st.divider()
     st.subheader("📈 Detailed Visualizations")
     
     # Dashboards from plotting
-    st.plotly_chart(summary_plot(cf), width='stretch')
+    # st.plotly_chart(summary_plot(cf), width='stretch')
 
     st.subheader("Cash Flow Profile")
     st.plotly_chart(plot_cashflow(cf), width='stretch')
     
+    st.subheader("Production Profile")
+    st.plotly_chart(plot_production_profile(cf), width='stretch')
+
+    st.subheader("Development Profile")
+    st.plotly_chart(plot_development_profile(cf), width='stretch')
+
     with st.expander("🔗 Cash Flow - Sankey Diagram"):
         st.plotly_chart(plot_cf_sankey_chart(cf, height=700), width='stretch')
     
@@ -145,12 +158,13 @@ if run_button:
             'Gas Production': [cf.annual_gas_production.get(y,0.0) for y in years],
             'Revenue': [cf.annual_revenue.get(y,0.0) for y in years],
             'Royalty': [cf.annual_royalty.get(y,0.0) for y in years],
-            'CAPEX': [cf.annual_capex.get(y,0.0) for y in years],
-            'OPEX': [cf.annual_opex.get(y,0.0) for y in years],
-            'ABEX': [cf.annual_abex.get(y,0.0) for y in years],
+            'CAPEX_inflated': [cf.annual_capex_inflated.get(y,0.0) for y in years],
+            'OPEX_inflated': [cf.annual_opex_inflated.get(y,0.0) for y in years],
+            'ABEX_inflated': [cf.annual_abex_inflated.get(y,0.0) for y in years],
             'Tax': [cf.annual_total_tax.get(y,0.0) for y in years],
+            'Others': [cf.other_fees.get(y,0.0) for y in years],
             'NCF': [cf.annual_net_cash_flow.get(y,0.0) for y in years],
-            'Cum CF': [cf.cumulative_cash_flow.get(y,0.0) for y in years]
+            'Cum CF': [cf.cumulative_cash_flow.get(y,0.0) for y in years],
         })
         st.dataframe(detail_df.style.format("{:.2f}"))
     
@@ -159,9 +173,10 @@ if run_button:
     
     # Create Excel buffer
     output = io.BytesIO()
+
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         detail_df.to_excel(writer, index=False, sheet_name='Annual Cash Flow')
-        
+    
         # Summary Sheet
         summ = cf.get_project_summary()
         summary_df = pd.DataFrame(list(summ.items()), columns=['Metric', 'Value'])
@@ -170,7 +185,7 @@ if run_button:
     st.download_button(
         label="📥 Download Full Economic Report (Excel)",
         data=output.getvalue(),
-        file_name=f"economic_report_{prod_name}_{dev_name}_{price_name}.xlsx",
+        file_name=f"economic_report_{project_name}_{prod_name}_{dev_name}_{price_name}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 else:

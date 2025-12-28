@@ -70,7 +70,7 @@ class CashFlowKOR(BaseModel):
 
     # 총 가치
     cop_year: Optional[int] = None
-    payback: Optional[int] = None
+    payback_year: Optional[int] = None
     total_revenue: Optional[float] = None
     total_royalty: Optional[float] = None
     total_capex: Optional[float] = None
@@ -403,7 +403,7 @@ class CashFlowKOR(BaseModel):
         # Calculate payback year
         payback = None
         for y, val in self.cumulative_cash_flow.items():
-            if val >= 0:
+            if y >= self.production_start_year and val >= 0:
                 payback = y
                 break
         self.payback_year = payback

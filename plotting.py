@@ -7,6 +7,47 @@ from typing import Dict, List
 from matplotlib import colors as mcolors # HEX 코드를 RGB로 변환하기 위해 사용
 
 
+def plot_production_profile(cf, show: bool = True):
+    """
+    Plot production profile using Plotly.
+    Relies on cf.production_profile being present.
+    """
+    if not cf.production_profile:
+        raise ValueError("Production profile not calculated. Run calculate_production_profile() first.")
+
+    years = sorted(cf.production_profile.keys())
+    gas_production_vals = [cf.annual_gas_production.get(y, 0.0) for y in years]
+    oil_production_vals = [cf.annual_oil_production.get(y, 0.0) for y in years]
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=years, y=gas_production_vals, mode='lines', name='Gas Production'))
+    fig.add_trace(go.Scatter(x=years, y=oil_production_vals, mode='lines', name='Oil Production'))
+    fig.update_layout(title='Production Profile', xaxis_title='Year', yaxis_title='Production (MM barrels)')
+    if show:
+        fig.show()
+    return fig
+
+
+def plot_price(cf, show: bool = True):
+    """
+    Plot price profile using Plotly.
+    Relies on cf.price_profile being present.
+    """
+    if not cf.price_profile:
+        raise ValueError("Price profile not calculated. Run calculate_price_profile() first.")
+
+    years = sorted(cf.price_profile.keys())
+    gas_price_vals = [cf.gas_price_by_year.get(y, 0.0) for y in years]
+    oil_price_vals = [cf.oil_price_by_year.get(y, 0.0) for y in years]
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=years, y=gas_price_vals, mode='lines', name='Gas Price'))
+    fig.add_trace(go.Scatter(x=years, y=oil_price_vals, mode='lines', name='Oil Price'))
+    fig.update_layout(title='Price Profile', xaxis_title='Year', yaxis_title='Price (USD/MM barrel)')
+    if show:
+        fig.show()
+    return fig
+
 # DevelopmentCost class plotting functions
 def plot_cost_profile(dev_cost, show: bool = True):
     """
@@ -111,9 +152,9 @@ def plot_cash_flow_profile_plotly(cf, width=1200, height=800):
     years = cf.all_years
     rev = np.array([cf.annual_revenue.get(y, 0.0) for y in years])
     royalty = np.array([cf.annual_royalty.get(y, 0.0) for y in years])
-    cap = np.array([cf.annual_capex.get(y, 0.0) for y in years])
-    opx = np.array([cf.annual_opex.get(y, 0.0) for y in years])
-    abx = np.array([cf.annual_abex.get(y, 0.0) for y in years])
+    cap = np.array([cf.annual_capex_inflated.get(y, 0.0) for y in years])
+    opx = np.array([cf.annual_opex_inflated.get(y, 0.0) for y in years])
+    abx = np.array([cf.annual_abex_inflated.get(y, 0.0) for y in years])
     tax = np.array([cf.annual_total_tax.get(y, 0.0) for y in years])
     net = np.array([cf.annual_net_cash_flow.get(y, 0.0) for y in years])
     cum = np.array([cf.cumulative_cash_flow.get(y, 0.0) for y in years])
@@ -152,8 +193,8 @@ def plot_cash_flow_profile_plotly(cf, width=1200, height=800):
     fig.add_hline(y=0.0, line_dash="dash", line_color="red", row=1, col=2)
 
     # 3. Production
-    oil_prod = [cf.oil_production_by_year.get(y, 0.0) for y in years]
-    gas_prod = [cf.gas_production_by_year.get(y, 0.0) for y in years]
+    oil_prod = [cf.annual_oil_production.get(y, 0.0) for y in years]
+    gas_prod = [cf.annual_gas_production.get(y, 0.0) for y in years]
     fig.add_trace(go.Bar(x=years, y=gas_prod, name='Gas (BCF)', marker_color='lightblue'), row=2, col=1)
     
     # 4. Prices
@@ -169,9 +210,9 @@ def summary_plot(cf, width=1200, height=700):
     years = cf.all_years
     rev = np.array([cf.annual_revenue.get(y, 0.0) for y in years])
     royalty = np.array([cf.annual_royalty.get(y, 0.0) for y in years])
-    cap = np.array([cf.annual_capex.get(y, 0.0) for y in years])
-    opx = np.array([cf.annual_opex.get(y, 0.0) for y in years])
-    abx = np.array([cf.annual_abex.get(y, 0.0) for y in years])
+    cap = np.array([cf.annual_capex_inflated.get(y, 0.0) for y in years])
+    opx = np.array([cf.annual_opex_inflated.get(y, 0.0) for y in years])
+    abx = np.array([cf.annual_abex_inflated.get(y, 0.0) for y in years])
     tax = np.array([cf.annual_total_tax.get(y, 0.0) for y in years])
     net = np.array([cf.annual_net_cash_flow.get(y, 0.0) for y in years])
     cum = np.array([cf.cumulative_cash_flow.get(y, 0.0) for y in years])
@@ -285,10 +326,10 @@ def plot_cf_waterfall_chart(cf, width=1200,height=600):
 
     fig.update_layout(width=width,height=height,
                     template='plotly_white',    #  ['ggplot2', 'seaborn', 'simple_white', 'plotly', 'plotly_white', 'plotly_dark', 'presentation', 'xgridoff', 'ygridoff', 'gridon', 'none']
-                    title_text="Economic Analysis",
-                    title_x = 0.5,
-                    title_xanchor = 'center',
-                    title_font_size = 20,
+                    # title_text="Economic Analysis",
+                    # title_x = 0.5,
+                    # title_xanchor = 'center',
+                    # title_font_size = 20,
     )
 
     # --- Define the Set3 Colors ---

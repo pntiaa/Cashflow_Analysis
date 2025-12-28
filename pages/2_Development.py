@@ -53,8 +53,8 @@ with st.expander("🛠️ Detailed Development Parameter Editor", expanded=True)
 
     with col_ed3:
         st.subheader("💸 OPEX & ABEX")
-        opex_per_bcf = st.number_input("OPEX per BCF", value=2.093, format="%.3f")
-        opex_fixed = st.number_input("OPEX Fixed (k$/y)", value=10422.6)
+        opex_per_bcf = st.number_input("OPEX per BCF", value=1.047, format="%.3f")
+        opex_fixed = st.number_input("OPEX Fixed (k$/y)", value=347.424)
         abex_per_well = st.number_input("ABEX per Well", value=17.4)
         abex_fpso = st.number_input("ABEX FPSO", value=114.7 if dev_case == "FPSO_case" else 90.0)
         abex_subsea = st.number_input("ABEX Subsea", value=14.0)
