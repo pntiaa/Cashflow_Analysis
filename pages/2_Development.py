@@ -23,8 +23,8 @@ selected_prod = st.session_state.production_cases[selected_prod_name]
 # --- Sidebar Inputs (Timing) ---
 with st.sidebar:
     st.header("Project Timing")
-    dev_start_year = st.number_input("Development Start Year", value=2026)
-    drill_start_year = st.number_input("Production Drilling Start Year", value=2033)
+    dev_start_year = st.number_input("Development Start Year", value=2026, step=1)
+    drill_start_year = st.number_input("Production Drilling Start Year", value=2033, step=1)
     
     st.divider()
     dev_case = st.radio("Development Case", options=["FPSO_case", "tie-back_case"])
@@ -33,8 +33,20 @@ with st.sidebar:
 with st.expander("🛠️ Detailed Development Parameter Editor", expanded=True):
     st.info("Edit technical and economic parameters for the development scenario below.")
     
-    col_ed1, col_ed2, col_ed3 = st.columns(3)
-    
+    col_ed0, col_ed1, col_ed2, col_ed3 = st.columns(4)
+
+    with col_ed0:
+        st.subheader("🔍 Exploration Costs")
+        sunk_cost = st.number_input("Sunk Cost", value=0.0)
+        exploration_start_year = st.number_input("Exploration Start Year", value=2024, step=1)
+        
+        exploration_init_df = pd.DataFrame({
+            "year": range(exploration_start_year, exploration_start_year + 10),
+            "exploration costs (MM$)": [0.0] * 10
+        })
+        exploration_df = st.data_editor(exploration_init_df, hide_index=True, use_container_width=True)
+
+
     with col_ed1:
         st.subheader("📋 Study & PM Costs")
         feas_study = st.number_input("Feasibility Study", value=3.0)
@@ -98,6 +110,14 @@ if apply_button:
 if st.session_state.dev_results_ready:
     # --- Calculation ---
     dev = DevelopmentCost(dev_start_year=dev_start_year, dev_param=dev_param, development_case=dev_case)
+
+    # Set exploration stage costs
+    exploration_costs_dict = exploration_df.set_index('year')['exploration costs (MM$)'].to_dict()
+    dev.set_exploration_stage(
+        exploration_start_year = exploration_start_year,
+        exploration_costs=exploration_costs_dict
+        sunk_cost=sunk_cost,
+    )
 
     # Link to selected production case's drilling plan and volumes
     dev.set_drilling_schedule(

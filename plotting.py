@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import plotly.express as px
+import matplotlib.pyplot as plt
 from typing import Dict, List
 from matplotlib import colors as mcolors # HEX 코드를 RGB로 변환하기 위해 사용
 
@@ -12,10 +13,10 @@ def plot_production_profile(cf, show: bool = True):
     Plot production profile using Plotly.
     Relies on cf.production_profile being present.
     """
-    if not cf.production_profile:
+    if not cf.annual_gas_production:
         raise ValueError("Production profile not calculated. Run calculate_production_profile() first.")
 
-    years = sorted(cf.production_profile.keys())
+    years = sorted(cf.annual_gas_production.keys())
     gas_production_vals = [cf.annual_gas_production.get(y, 0.0) for y in years]
     oil_production_vals = [cf.annual_oil_production.get(y, 0.0) for y in years]
 
@@ -23,20 +24,18 @@ def plot_production_profile(cf, show: bool = True):
     fig.add_trace(go.Scatter(x=years, y=gas_production_vals, mode='lines', name='Gas Production'))
     fig.add_trace(go.Scatter(x=years, y=oil_production_vals, mode='lines', name='Oil Production'))
     fig.update_layout(title='Production Profile', xaxis_title='Year', yaxis_title='Production (MM barrels)')
-    if show:
-        fig.show()
     return fig
 
 
-def plot_price(cf, show: bool = True):
+def plot_price(cf):
     """
     Plot price profile using Plotly.
     Relies on cf.price_profile being present.
     """
-    if not cf.price_profile:
+    if not cf.gas_price_by_year:
         raise ValueError("Price profile not calculated. Run calculate_price_profile() first.")
 
-    years = sorted(cf.price_profile.keys())
+    years = sorted(cf.gas_price_by_year.keys())
     gas_price_vals = [cf.gas_price_by_year.get(y, 0.0) for y in years]
     oil_price_vals = [cf.oil_price_by_year.get(y, 0.0) for y in years]
 
@@ -44,12 +43,11 @@ def plot_price(cf, show: bool = True):
     fig.add_trace(go.Scatter(x=years, y=gas_price_vals, mode='lines', name='Gas Price'))
     fig.add_trace(go.Scatter(x=years, y=oil_price_vals, mode='lines', name='Oil Price'))
     fig.update_layout(title='Price Profile', xaxis_title='Year', yaxis_title='Price (USD/MM barrel)')
-    if show:
-        fig.show()
     return fig
 
+
 # DevelopmentCost class plotting functions
-def plot_cost_profile(dev_cost, show: bool = True):
+def plot_cost_profile(dev_cost):
     """
     Plot annual capex/opex/abex stacked bar and cumulative curve using Plotly.
     Relies on dev_cost.total_annual_costs, dev_cost.annual_capex, dev_cost.annual_opex, dev_cost.annual_abex being present.
@@ -73,7 +71,7 @@ def plot_cost_profile(dev_cost, show: bool = True):
     ax1.bar(years, abex_vals, bottom=bottom_for_abex, label='ABEX')
     ax1.set_xlabel('Year')
     ax1.set_ylabel('Cost (MM$)')
-    ax1.set_title(f'Annual Cost Profile - {self.development_case}')
+    ax1.set_title(f'Annual Cost Profile - {dev_cost.development_case}')
     y_max = max(bottom_for_abex)*1.2
     y_max_digit = int(np.log10(y_max))
     y_max_grid = np.round(y_max, y_max_digit*-1)
@@ -84,7 +82,7 @@ def plot_cost_profile(dev_cost, show: bool = True):
     # Plot 3: drilled wells
     ax3 = ax1.twinx()
     # Align drilled_wells with the full timeline (years)
-    drilled_wells_aligned = [self.yearly_drilling_schedule.get(y, 0) for y in years]
+    drilled_wells_aligned = [dev_cost.yearly_drilling_schedule.get(y, 0) for y in years]
     ax3.plot(years, drilled_wells_aligned, marker='o', color='blue', label='Drilled Wells')
     ax3.set_ylabel('Drilled Wells', color='blue')
     ax3.tick_params(axis='y', labelcolor='blue')
@@ -105,18 +103,18 @@ def plot_cost_profile(dev_cost, show: bool = True):
                     arrowprops=dict(arrowstyle='->', connectionstyle='arc3,rad=0'))
 
     plt.tight_layout()
-    if show:
-        plt.show()
+    return fig
 
-def plot_total_annual_costs(dev_cost, show: bool = True):
+
+def plot_total_annual_costs(dev_cost):
     """
     Plots the total annual costs as a bar chart.
     """
     if not dev_cost.total_annual_costs:
         raise ValueError("Total annual costs have not been calculated. Call calculate_total_costs() first.")
 
-    years = list(self.total_annual_costs.keys())
-    costs = list(self.total_annual_costs.values())
+    years = list(dev_cost.total_annual_costs.keys())
+    costs = list(dev_cost.total_annual_costs.values())
 
     plt.figure(figsize=(6, 4))
     plt.bar(years, costs, color='skyblue')
@@ -126,8 +124,8 @@ def plot_total_annual_costs(dev_cost, show: bool = True):
     plt.grid(axis='y', linestyle='--', alpha=0.7)
     plt.xticks(rotation=45)
     plt.tight_layout()
-    if show:
-        plt.show()
+    return fig
+
 
 def get_rgba_from_hex(hex_or_rgb_code, alpha=0.5):
     """

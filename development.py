@@ -59,6 +59,7 @@ class DevelopmentCost:
         self._total_production_duration: Optional[int] = None # New attribute to store production duration
 
         # Annual dicts (all MM$ units)
+        self.sunk_cost: float = 0.0
         self.exploration_costs: Dict[int, float] = {} #Added
         self.drilling_costs: Dict[int, float] = {}
         self.subsea_costs: Dict[int, float] = {}
@@ -109,7 +110,7 @@ class DevelopmentCost:
         - 개발 및 생산 연도를 포함하는 전체 연도(`self.all_years`)를 구축.
         - 개발 딕셔너리를 정렬하고 누락된 부분을 0으로 채워 `self.annual_capex/opex/abex`를 채움.
         """
-        years = set(self.cost_years.keys())
+        years = set(self.cost_years)
         years |= set(self.oil_production_by_year.keys())
         years |= set(self.gas_production_by_year.keys())
         years |= set(self.annual_capex.keys())
@@ -126,12 +127,23 @@ class DevelopmentCost:
                               exploration_start_year: int = 2024,
                               exploration_costs: Dict[int, float] = None,
                               sunk_cost=None, output=True):
-        self.exploration_costs = exploration_costs
+        self.exploration_costs = exploration_costs or {}
+        years = set()
+        if exploration_costs:
+             max_year = max(exploration_costs.keys()) 
+             years = set(range(exploration_start_year, max_year + 1))
+        
+        years |= set(self.cost_years)
+        years = sorted(list(years))
 
+        for y in years:
+            self.exploration_costs[y] = exploration_costs.get(y, 0.0)
+        
+        # add sunk cost on exploration_start_year
+        self.exploration_costs[exploration_start_year] += sunk_cost
         if output:
-            print(f"[exploration] exploration drilling ({len(self.exploration_costs.keys())} years): {self.yearly_drilling_schedule}")
-            print(f"[exploration] Cumulative wells by year: {self.cumulative_well_count}")
-
+            print(f"[exploration] exploration drilling ({self.exploration_costs.keys()})")
+            print(f"[exploration] sunk cost ({self.sunk_cost} added on year {exploration_start_year})")
 
     def set_drilling_schedule(self, drill_start_year, yearly_drilling_schedule: Dict[int, int], already_shifted=False, output=True):
         """
@@ -669,6 +681,13 @@ class QuestorDevelopmentCost(DevelopmentCost):
         except Exception as e:
             print(f"❌ 로드 중 오류 발생: {e}")
 
+    def set_exploration_stage(self, exploration_start_year: int = 2024, exploration_costs: Dict[int, float] = None, sunk_cost=None, output=True):
+        super().set_exploration_stage(exploration_start_year, exploration_costs, sunk_cost, output)
+        # Re-run cost aggregation to include exploration costs
+        if self.questor_raw:
+            self._set_annual_costs(self.questor_raw, output=False)
+            self.update_summary_metrics()
+
     def _set_annual_costs(self, questor_dict: Dict, output=True):
         dev_start = self.dev_start_year
         # 키워드 기반 유연한 합산 매핑
@@ -676,8 +695,18 @@ class QuestorDevelopmentCost(DevelopmentCost):
         opex_raw = self._get_sum_of_columns(questor_dict, ['OPEX','Fixed OPEX', 'Variable OPEX', 'Tariffs', 'Leases'], "OPEX")
         abex_raw = self._get_sum_of_columns(questor_dict, ['DECOMM','DECOMM.'], "ABEX")
 
+        self.annual_capex = {} # Initialize clean
         for k, v in capex_raw.items(): self.annual_capex[k + dev_start] = v
+        
+        # Add exploration costs if they exist
+        if self.exploration_costs:
+            for k, v in self.exploration_costs.items():
+                self.annual_capex[k] = self.annual_capex.get(k, 0.0) + v
+
+        self.annual_opex = {}
         for k, v in opex_raw.items(): self.annual_opex[k + dev_start] = v
+        
+        self.annual_abex = {}
         for k, v in abex_raw.items(): self.annual_abex[k + dev_start] = v
 
         self.cost_years = sorted(set(self.annual_capex.keys()) | set(self.annual_opex.keys()) | set(self.annual_abex.keys()))

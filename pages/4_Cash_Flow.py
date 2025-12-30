@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from cashflow import CashFlowKOR
 from utils import ensure_state_init, render_project_sidebar
-from plotting import plot_cashflow, summary_plot, plot_cf_sankey_chart, plot_cf_waterfall_chart
+from plotting import plot_cashflow, summary_plot, plot_cf_sankey_chart, plot_cf_waterfall_chart, plot_production_profile, plot_cost_profile
 import io
 
 st.set_page_config(page_title="Cash Flow Analysis", layout="wide")
@@ -18,6 +18,7 @@ missing_deps = []
 if not st.session_state.production_cases: missing_deps.append("Production")
 if not st.session_state.development_cases: missing_deps.append("Development")
 if not st.session_state.price_cases: missing_deps.append("Price Deck")
+if not st.session_state.current_project: missing_deps.append("Project")
 
 if missing_deps:
     st.warning(f"⚠️ Missing saved cases from: {', '.join(missing_deps)}. Please complete those pages first.")
@@ -52,6 +53,7 @@ run_button = st.button("🚀 Run Cash Flow Analysis", width='content', type="sec
 
 if run_button:
     # --- Calculation ---
+    project_name = st.session_state.current_project
     p_case = st.session_state.production_cases[prod_name]
     d_case = st.session_state.development_cases[dev_name]
     s_case = st.session_state.price_cases[price_name]
@@ -141,8 +143,8 @@ if run_button:
     st.subheader("Production Profile")
     st.plotly_chart(plot_production_profile(cf), width='stretch')
 
-    st.subheader("Development Profile")
-    st.plotly_chart(plot_development_profile(cf), width='stretch')
+    st.subheader("Cost Profile")
+    st.plotly_chart(plot_cost_profile(dev_obj), width='stretch')
 
     with st.expander("🔗 Cash Flow - Sankey Diagram"):
         st.plotly_chart(plot_cf_sankey_chart(cf, height=700), width='stretch')
