@@ -27,6 +27,43 @@ def plot_production_profile(cf, show: bool = True):
     return fig
 
 
+def plot_dev_cost_profile(dev):
+    years = sorted(dev.cost_years)
+    capex_vals = [dev.annual_capex.get(y, 0.0) for y in years]
+    opex_vals = [dev.annual_opex.get(y, 0.0) for y in years]
+    abex_vals = [dev.annual_abex.get(y, 0.0) for y in years]
+    
+    fig = go.Figure()
+    fig.add_trace(go.Bar(x=years, y=capex_vals, name='CAPEX'))
+    fig.add_trace(go.Bar(x=years, y=opex_vals, name='OPEX'))
+    fig.add_trace(go.Bar(x=years, y=abex_vals, name='ABEX'))
+    
+    fig.update_layout(
+        barmode='stack',
+        title=f"Annual Expenditure Forecast (MM$)",
+        xaxis_title="Year",
+        yaxis_title="MM$",
+        legend_title="Cost Category"
+    )
+    return fig
+    
+def plot_dev_prod_profile(dev):    
+    p_years = sorted(dev.production_years)
+    gas_vals = [dev.annual_gas_production.get(y, 0.0) for y in p_years]
+    oil_vals = [dev.annual_oil_production.get(y, 0.0) for y in p_years]
+    
+    fig_p = go.Figure()
+    fig_p.add_trace(go.Scatter(x=p_years, y=gas_vals, mode='lines+markers', name='Gas (BCF)'))
+    fig_p.add_trace(go.Scatter(x=p_years, y=oil_vals, mode='lines+markers', name='Oil/Cond. (MMbbl)'))
+    
+    fig_p.update_layout(
+        title="Annual Production Profile",
+        xaxis_title="Year",
+        yaxis_title="Volume",
+        legend_title="Product"
+    )
+    return fig_p
+
 def plot_price(cf):
     """
     Plot price profile using Plotly.

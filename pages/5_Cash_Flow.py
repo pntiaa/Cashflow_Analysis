@@ -99,6 +99,39 @@ if run_button:
     cf.calculate_net_cash_flow(output=False)
     cf.calculate_npv(output=False)
     
+    # Store result in session state
+    st.session_state.last_cf_result = {
+        'cf': cf,
+        'prod_name': prod_name,
+        'dev_name': dev_name,
+        'price_name': price_name,
+        'dev_obj': dev_obj,
+        'project_name': project_name,
+        'inputs': {
+            'prod_name': prod_name,
+            'dev_name': dev_name,
+            'price_name': price_name,
+            'global_params': {
+                'base_year': base_year,
+                'discount_rate': discount_rate,
+                'exchange_rate': exchange_rate,
+                'cost_inflation': cost_inflation,
+                'depreciation_method': depreciation_method,
+                'useful_life': useful_life
+            }
+        }
+    }
+
+# --- Check and Display Results ---
+if st.session_state.get('last_cf_result'):
+    res = st.session_state.last_cf_result
+    cf = res['cf']
+    prod_name = res['prod_name']
+    dev_name = res['dev_name']
+    price_name = res['price_name']
+    dev_obj = res['dev_obj']
+    project_name = res['project_name']
+
     # --- UI Results ---
     st.divider()
     
@@ -111,13 +144,6 @@ if run_button:
     # Key Metrics Table
     with col_r1:
         st.markdown("### Key Metrics")
-        # col_metrics1, col_metrics2 = st.columns([1, 1])
-        # col_metrics1.metric("NPV (Discounted)", f"{summ['npv']:,.0f} MM$")
-        # col_metrics1.metric("IRR", f"{summ['irr']*100:.1f}%" if isinstance(summ['irr'], (int, float)) else "N/A")
-        # col_metrics1.metric("Payback Year", f"{summ['payback_year']}" if summ['payback_year'] else "N/A")
-        # col_metrics2.metric("Total Revenue", f"{summ['total_revenue']:,.0f} MM$")
-        # col_metrics2.metric("Total CAPEX", f"{summ['total_capex']:,.0f} MM$")
-        # col_metrics2.metric("Net Cash Flow (Total)", f"{summ['final_cumulative']:,.0f} MM$")
         st.metric("NPV (Discounted)", f"{summ['npv']:,.0f} MM$")
         st.metric("IRR", f"{summ['irr']*100:.1f}%" if isinstance(summ['irr'], (int, float)) else "N/A")
         st.metric("Payback Year", f"{summ['payback_year']}" if summ['payback_year'] else "N/A")
@@ -128,15 +154,11 @@ if run_button:
     # Plot Cash Flow Chart
     with col_r2:
         st.markdown("### Cash Flow Distribution")
-        # st.plotly_chart(plot_cashflow(cf), width='content')
         st.plotly_chart(plot_cf_waterfall_chart(cf), width='content')
 
     st.divider()
     st.subheader("📈 Detailed Visualizations")
     
-    # Dashboards from plotting
-    # st.plotly_chart(summary_plot(cf), width='stretch')
-
     st.subheader("Cash Flow Profile")
     st.plotly_chart(plot_cashflow(cf), width='stretch')
     
@@ -170,6 +192,30 @@ if run_button:
         })
         st.dataframe(detail_df.style.format("{:.2f}"))
     
+    # --- Save Result to JSON ---
+    from utils import save_project
+    st.divider()
+    st.subheader("💾 Save Scenario Result")
+    
+    with st.container():
+        col_save1, col_save2 = st.columns([3, 1])
+        with col_save1:
+            default_name = f"Result_{prod_name}_{dev_name}_{price_name}"
+            save_name = st.text_input("Result Name", value=default_name, key="save_res_name")
+        with col_save2:
+            st.write("") # Spacer
+            st.write("") 
+            if st.button("Save Result to Project", key="save_res_btn"):
+                if save_name:
+                    st.session_state.cashflow_results[save_name] = {
+                        'cf': cf,
+                        'inputs': res['inputs']
+                    }
+                    save_project(st.session_state.current_project)
+                    st.success(f"Result '{save_name}' saved to project!")
+                else:
+                    st.error("Please enter a name for the result.")
+    
     # --- Final Export ---
     st.subheader("📊 Export Results")
     
@@ -190,5 +236,6 @@ if run_button:
         file_name=f"economic_report_{project_name}_{prod_name}_{dev_name}_{price_name}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
+
 else:
     st.info("💡 Click the button above to run the economic analysis.")

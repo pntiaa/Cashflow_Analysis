@@ -4,7 +4,7 @@ import os
 import tempfile
 from development import QuestorDevelopmentCost
 from utils import ensure_state_init, save_project, render_project_sidebar
-from plotting import plot_cost_profile
+from plotting import plot_dev_cost_profile, plot_dev_prod_profile
 import plotly.graph_objects as go
 
 st.set_page_config(page_title="Questor Cost Upload", layout="wide")
@@ -16,8 +16,15 @@ ensure_state_init()
 render_project_sidebar()
 
 # --- 1. File Upload Section ---
-st.header("1. Upload QUE$TOR Excel File")
-uploaded_file = st.file_uploader("Choose a QUE$TOR Excel file", type=["xlsx"])
+col_1, col_2 = st.columns(2)
+
+col_1.subheader("Upload QUE$TOR Excel File")
+uploaded_file = col_1.file_uploader("Choose a QUE$TOR Excel file", type=["xlsx"])
+
+col_1.subheader("Development Parameters")
+dev_start_year = col_1.number_input("Development Start Year", value=2024)
+
+col_2.subheader("Data Preview")
 
 if uploaded_file is not None:
     # Option for sheet name - Automatically detect sheet names
@@ -26,24 +33,14 @@ if uploaded_file is not None:
     
     # Set default index if "Economic Detail" exists
     default_idx = sheet_names.index("Economic Detail") if "Economic Detail" in sheet_names else 0
-    sheet_name = st.selectbox("Select Excel Sheet", options=sheet_names, index=default_idx)
-    
+    sheet_name = col_2.selectbox("Select Excel Sheet", options=sheet_names, index=default_idx)
+        
     try:
         # Preview data
         df_preview = pd.read_excel(uploaded_file, sheet_name=sheet_name, header=None)
-        st.subheader("Data Preview")
-        st.dataframe(df_preview.head(50))
-        
-        st.divider()
-        
-        # --- 2. Parameter Setup ---
-        st.header("2. Development Parameters")
-        colp1, colp2 = st.columns(2)
-        with colp1:
-            dev_start_year = st.number_input("Development Start Year", value=2024)
-        
-        # --- 3. Calculation ---
-        if st.button("🚀 Apply Parameters & Calculate", type="primary"):
+        col_2.dataframe(df_preview.head(50))
+
+        if col_1.button("Apply Parameters & Calculate", type="primary"):
             # Save uploaded file to a temporary location for the class to read
             with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
                 tmp.write(uploaded_file.getbuffer())
@@ -72,48 +69,10 @@ if uploaded_file is not None:
             q_dev = st.session_state.last_questor_obj
             
             st.subheader("📊 Annual Cost Profile")
+            st.plotly_chart(plot_dev_cost_profile(q_dev), use_container_width=True)
             
-            # Using custom Plotly plotting for better stacked bar experience if plot_cost_profile is Matplotlib-based
-            # Checking plotting.py again, plot_cost_profile returns a matplotlib fig.
-            # I will create a Plotly version here for better Streamlit integration.
-            
-            years = sorted(q_dev.cost_years)
-            capex_vals = [q_dev.annual_capex.get(y, 0.0) for y in years]
-            opex_vals = [q_dev.annual_opex.get(y, 0.0) for y in years]
-            abex_vals = [q_dev.annual_abex.get(y, 0.0) for y in years]
-            
-            fig = go.Figure()
-            fig.add_trace(go.Bar(x=years, y=capex_vals, name='CAPEX'))
-            fig.add_trace(go.Bar(x=years, y=opex_vals, name='OPEX'))
-            fig.add_trace(go.Bar(x=years, y=abex_vals, name='ABEX'))
-            
-            fig.update_layout(
-                barmode='stack',
-                title=f"Annual Expenditure Forecast (MM$)",
-                xaxis_title="Year",
-                yaxis_title="MM$",
-                legend_title="Cost Category"
-            )
-            
-            st.plotly_chart(fig, use_container_width=True)
-            
-            # --- Added Production Plot ---
             st.subheader("📈 Annual Production Profile")
-            p_years = sorted(q_dev.production_years)
-            gas_vals = [q_dev.annual_gas_production.get(y, 0.0) for y in p_years]
-            oil_vals = [q_dev.annual_oil_production.get(y, 0.0) for y in p_years]
-            
-            fig_p = go.Figure()
-            fig_p.add_trace(go.Scatter(x=p_years, y=gas_vals, mode='lines+markers', name='Gas (BCF)'))
-            fig_p.add_trace(go.Scatter(x=p_years, y=oil_vals, mode='lines+markers', name='Oil/Cond. (MMbbl)'))
-            
-            fig_p.update_layout(
-                title="Annual Production Profile",
-                xaxis_title="Year",
-                yaxis_title="Volume",
-                legend_title="Product"
-            )
-            st.plotly_chart(fig_p, use_container_width=True)
+            st.plotly_chart(plot_dev_prod_profile(q_dev), use_container_width=True)
             
             st.divider()
             
@@ -155,4 +114,4 @@ if uploaded_file is not None:
         st.info("Ensure the sheet name is correct and the file matches the expected QUE$TOR format.")
 
 else:
-    st.info("💡 Please upload a QUE$TOR Excel file to get started.")
+    col_1.info("💡 Please upload a QUE$TOR Excel file to get started.")

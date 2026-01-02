@@ -20,6 +20,8 @@ def ensure_state_init():
         st.session_state.development_cases = {}
     if "price_cases" not in st.session_state:
         st.session_state.price_cases = {}
+    if "cashflow_results" not in st.session_state:
+        st.session_state.cashflow_results = {}
     # UI transient states
     if "profile" not in st.session_state:
         st.session_state.profile = None
@@ -42,7 +44,8 @@ def save_project(project_name: str):
     data_to_save = {
         "production_cases": st.session_state.production_cases,
         "development_cases": serialize_dev_cases(st.session_state.development_cases),
-        "price_cases": st.session_state.price_cases
+        "price_cases": st.session_state.price_cases,
+        "cashflow_results": serialize_cashflow_results(st.session_state.cashflow_results)
     }
     
     with open(file_path, "w") as f:
@@ -74,6 +77,7 @@ def load_project(project_name: str):
     st.session_state.production_cases = production_cases
     st.session_state.development_cases = deserialize_dev_cases(data.get("development_cases", {}))
     st.session_state.price_cases = price_cases
+    st.session_state.cashflow_results = deserialize_cashflow_results(data.get("cashflow_results", {}))
     st.session_state.current_project = project_name
 
 def list_projects():
@@ -95,6 +99,7 @@ def render_project_sidebar():
                     st.session_state.production_cases = {}
                     st.session_state.development_cases = {}
                     st.session_state.price_cases = {}
+                    st.session_state.cashflow_results = {}
                     save_project(new_project_name)
                     st.success(f"Project '{new_project_name}' created!")
                     st.rerun()
@@ -179,7 +184,6 @@ def deserialize_dev_cases(serialized_cases):
                 )
             
             dev_obj.set_annual_production(
-                annual_production_years = info.get("annual_production_years", 30), # Fallback
                 annual_gas_production={int(k): v for k, v in info["annual_gas_production"].items()},
                 annual_oil_production={int(k): v for k, v in info["annual_oil_production"].items()},
                 already_shifted=True,
@@ -209,6 +213,47 @@ def deserialize_dev_cases(serialized_cases):
             del new_case["dev_params_info"]
         deserialized[name] = new_case
     return deserialized
+
+def serialize_cashflow_results(results):
+    """Converts CashFlowKOR result objects to serializable dicts."""
+    serialized = {}
+    for name, item in results.items():
+        # item['cf'] is the CashFlowKOR object
+        # item['inputs'] is dict of {prod_name, dev_name, price_name, global_params}
+        cf = item['cf']
+        if hasattr(cf, 'model_dump'):
+             cf_dict = cf.model_dump()
+        else:
+             cf_dict = cf.dict() # For Pydantic v1
+        
+        # Remove complex objects or redundant large objects
+        if 'development_cost' in cf_dict:
+            del cf_dict['development_cost']
+            
+        serialized[name] = {
+            'cf_data': cf_dict,
+            'inputs': item.get('inputs', {})
+        }
+    return serialized
+
+def deserialize_cashflow_results(data):
+    """Reconstructs CashFlowKOR objects from data."""
+    from cashflow import CashFlowKOR
+    results = {}
+    for name, item in data.items():
+        cf_data = item.get('cf_data', {})
+        inputs = item.get('inputs', {})
+        
+        # Note: Pydantic should handle the type conversion for keys (str -> int) automatically
+        # if the model fields are typed as Dict[int, float]. 
+        try:
+            cf = CashFlowKOR(**cf_data)
+            results[name] = {'cf': cf, 'inputs': inputs}
+        except Exception as e:
+            print(f"Error deserializing cashflow result '{name}': {e}")
+            # Optionally fallback or skip
+            
+    return results
 
 # --- PriceDeck Setup ---
 
