@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from cashflow import CashFlowKOR
 from utils import ensure_state_init, render_project_sidebar
-from plotting import plot_cashflow, plot_cf_sankey_chart, plot_cf_waterfall_chart
+from plotting import plot_cashflow, plot_cf_sankey_chart, plot_cf_waterfall_chart, plot_production_profile
 import io
 import plotly.graph_objects as go
 

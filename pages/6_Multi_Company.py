@@ -3,7 +3,7 @@ import pandas as pd
 import plotly.express as px
 from cashflow import CashFlowKOR, CompanyConfig, MultiCompanyCashFlow
 from utils import ensure_state_init, render_project_sidebar
-from plotting import plot_cashflow, summary_plot
+from plotting import plot_cashflow, summary_plot, plot_production_profile
 import io
 
 st.set_page_config(page_title="Multi-Company Analysis", layout="wide")
