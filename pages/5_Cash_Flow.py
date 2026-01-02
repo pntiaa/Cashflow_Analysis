@@ -2,8 +2,9 @@ import streamlit as st
 import pandas as pd
 from cashflow import CashFlowKOR
 from utils import ensure_state_init, render_project_sidebar
-from plotting import plot_cashflow, summary_plot, plot_cf_sankey_chart, plot_cf_waterfall_chart, plot_production_profile, plot_cost_profile
+from plotting import plot_cashflow, plot_cf_sankey_chart, plot_cf_waterfall_chart
 import io
+import plotly.graph_objects as go
 
 st.set_page_config(page_title="Cash Flow Analysis", layout="wide")
 
@@ -28,12 +29,37 @@ if missing_deps:
 st.subheader("🏁 Run Economic Scenario")
 col_s1, col_s2, col_s3 = st.columns(3)
 
-with col_s1:
+with col_s1.container(border=True, height="stretch"):
     prod_name = st.selectbox("Select Production Case", list(st.session_state.production_cases.keys()))
-with col_s2:
+    prod_data = st.session_state.production_cases[prod_name]
+    gas_production = prod_data['profiles']["gas"]
+    oil_production = prod_data['profiles']["oil"]
+    st.write(f'Total Gas Prod. : {sum(gas_production.values()):,.2f}')
+    st.write(f'Total Oil Prod. : {sum(oil_production.values()):,.2f}')
+with col_s2.container(border=True, height="stretch"):
     dev_name = st.selectbox("Select Development Case", list(st.session_state.development_cases.keys()))
-with col_s3:
+    dev_data = st.session_state.development_cases[dev_name]
+    total_capex = dev_data['summary']["total_capex"]
+    total_opex = dev_data['summary']["total_opex"]
+    st.write(f'Total CAPEX : {total_capex:,.2f} MM$')
+    st.write(f'Total OPEX : {total_opex:,.2f} MM$')
+with col_s3.container(border=True, height="stretch"):
     price_name = st.selectbox("Select Price Scenario", list(st.session_state.price_cases.keys()))
+    price_data = st.session_state.price_cases[price_name]
+    years = list(price_data['gas'].keys())
+    oil_price_by_year = list(price_data['oil'].values())
+    gas_price_by_year = list(price_data['gas'].values())
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=years, y=gas_price_by_year, mode='lines', name='Gas Price'))
+    fig.add_trace(go.Scatter(x=years, y=oil_price_by_year, mode='lines', name='Oil Price'))
+    fig.update_layout(
+        title='Price Profile', 
+        xaxis_title='Year', 
+        yaxis_title='Price (USD)',
+        # margin=dict(l=20, r=20, t=40, b=20),
+        height=300
+    )
+    st.plotly_chart(fig, use_container_width=True)
 
 # --- Global Economic Inputs ---
 with st.expander("⚙️ Global Economic Parameters"):
