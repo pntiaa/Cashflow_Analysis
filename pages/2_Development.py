@@ -115,7 +115,7 @@ if st.session_state.dev_results_ready:
     exploration_costs_dict = exploration_df.set_index('year')['exploration costs (MM$)'].to_dict()
     dev.set_exploration_stage(
         exploration_start_year = exploration_start_year,
-        exploration_costs=exploration_costs_dict
+        exploration_costs=exploration_costs_dict,
         sunk_cost=sunk_cost,
     )
 

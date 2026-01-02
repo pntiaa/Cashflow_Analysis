@@ -158,14 +158,23 @@ class DevelopmentCost:
 
         # make a shallow copy and sort years
         shift = 0 if already_shifted else self.drill_start_year
+        if not yearly_drilling_schedule:
+             if output:
+                 print("[schedule] No drilling schedule provided.")
+             return
+
         for y_idx, num_wells in yearly_drilling_schedule.items():
             self.yearly_drilling_schedule[y_idx + shift] = num_wells
-        # self.yearly_drilling_schedule = copy.deepcopy(yearly_drilling_schedule)
-
-        # self.cost_years = sorted(list(self.yearly_drilling_schedule.keys())) dev_start_year가 더 빠를경우 오류생길 수 있음
-        self.cost_years = sorted(list(range(self.dev_start_year, list(self.yearly_drilling_schedule.keys())[-1],1)))
+        
+        schedule_keys = sorted(list(self.yearly_drilling_schedule.keys()))
+        if not schedule_keys:
+            self.cost_years = [self.dev_start_year]
+        else:
+            # dev_start_year부터 마지막 시추년도까지의 범위를 생성
+            self.cost_years = sorted(list(range(self.dev_start_year, schedule_keys[-1] + 1, 1)))
+        
         if len(self.cost_years) == 0:
-            raise ValueError("yearly_drilling_schedule must contain at least one year")
+            self.cost_years = [self.dev_start_year]
 
         self.total_development_years = len(self.cost_years)
 
@@ -572,6 +581,7 @@ class QuestorDevelopmentCost(DevelopmentCost):
         # 부모 클래스 초기화
         super().__init__(dev_start_year=dev_start_year, dev_param={}, development_case='QUE$TOR_Final')
         self.questor_raw: Dict = {}  # 로딩된 원본 데이터를 확인할 수 있도록 속성 추가
+        self.drill_start_year = dev_start_year # Initialize for serialization compatibility
         self.load_questor_file(excel_file_path, sheet_name)
 
     def _find_keyword(self, df: pd.DataFrame, keyword: str, row_idx: Optional[int] = None, col_idx: Optional[int] = None):

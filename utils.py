@@ -143,7 +143,13 @@ def serialize_dev_cases(dev_cases):
                 "drill_start_year": dev_obj.drill_start_year,
                 "yearly_drilling_schedule": dev_obj.yearly_drilling_schedule,
                 "annual_gas_production": dev_obj.annual_gas_production,
-                "annual_oil_production": dev_obj.annual_oil_production
+                "annual_oil_production": dev_obj.annual_oil_production,
+                # Persistence for pre-calculated costs (Questor/Direct)
+                "annual_capex": dev_obj.annual_capex,
+                "annual_opex": dev_obj.annual_opex,
+                "annual_abex": dev_obj.annual_abex,
+                "total_annual_costs": dev_obj.total_annual_costs,
+                "cost_years": dev_obj.cost_years
             }
             del new_case["dev_obj"]
         serialized[name] = new_case
@@ -162,20 +168,43 @@ def deserialize_dev_cases(serialized_cases):
                 dev_param=info["dev_param"],
                 development_case=info["development_case"]
             )
-            # Re-apply schedule and production (keys in JSON are strings, convert to int)
-            dev_obj.set_drilling_schedule(
-                drill_start_year=info["drill_start_year"],
-                yearly_drilling_schedule={int(k): v for k, v in info["yearly_drilling_schedule"].items()},
-                already_shifted=True,
-                output=False
-            )
+            # Re-apply schedule and production (only if schedule exists)
+            schedule = {int(k): v for k, v in info.get("yearly_drilling_schedule", {}).items()}
+            if schedule:
+                dev_obj.set_drilling_schedule(
+                    drill_start_year=info.get("drill_start_year", info["dev_start_year"]),
+                    yearly_drilling_schedule=schedule,
+                    already_shifted=True,
+                    output=False
+                )
+            
             dev_obj.set_annual_production(
+                annual_production_years = info.get("annual_production_years", 30), # Fallback
                 annual_gas_production={int(k): v for k, v in info["annual_gas_production"].items()},
                 annual_oil_production={int(k): v for k, v in info["annual_oil_production"].items()},
                 already_shifted=True,
                 output=False
             )
-            dev_obj.calculate_total_costs(output=False)
+            
+            # Restore pre-calculated costs if they exist (for cases without drilling schedule like Questor)
+            if "annual_capex" in info and info["annual_capex"]:
+                dev_obj.annual_capex = {int(k): float(v) for k, v in info["annual_capex"].items()}
+                dev_obj.annual_opex = {int(k): float(v) for k, v in info["annual_opex"].items()}
+                dev_obj.annual_abex = {int(k): float(v) for k, v in info["annual_abex"].items()}
+                dev_obj.total_annual_costs = {int(k): float(v) for k, v in info["total_annual_costs"].items()}
+                dev_obj.cost_years = [int(y) for y in info.get("cost_years", sorted(list(dev_obj.annual_capex.keys())))]
+                
+                # Re-calculate cumulative costs for the restored data
+                cum = 0.0
+                dev_obj.cumulative_costs = {}
+                for y in sorted(dev_obj.total_annual_costs.keys()):
+                    cum += dev_obj.total_annual_costs[y]
+                    dev_obj.cumulative_costs[y] = cum
+            
+            # Only calculate if we have a drilling schedule to work with and NO pre-calculated costs
+            if schedule and not ("annual_capex" in info and info["annual_capex"]):
+                dev_obj.calculate_total_costs(output=False)
+            
             new_case["dev_obj"] = dev_obj
             del new_case["dev_params_info"]
         deserialized[name] = new_case
