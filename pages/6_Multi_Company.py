@@ -10,6 +10,8 @@ st.set_page_config(page_title="Multi-Company Analysis", layout="wide")
 
 st.title("🏢 Multi-Company Analysis")
 
+st.space(size="large")
+
 # --- Initialize Session State & Sidebar ---
 ensure_state_init()
 render_project_sidebar()

@@ -11,6 +11,8 @@ st.set_page_config(page_title="Development Cost from QUE$TOR data", layout="wide
 
 st.title("📂 Development Cost from QUE$TOR")
 
+st.space(size="large")
+
 # --- Initialize Session State & Sidebar ---
 ensure_state_init()
 render_project_sidebar()

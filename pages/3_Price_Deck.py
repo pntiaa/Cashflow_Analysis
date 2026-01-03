@@ -8,6 +8,8 @@ st.set_page_config(page_title="Price Deck Setup", layout="wide")
 
 st.title("📈 Oil & Gas Price Setup")
 
+st.space(size="large")
+
 # --- Initialize Session State & Sidebar ---
 ensure_state_init()
 render_project_sidebar()
