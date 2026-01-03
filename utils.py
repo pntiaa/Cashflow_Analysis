@@ -133,7 +133,7 @@ def render_project_sidebar():
         st.divider()
 
 def serialize_dev_cases(dev_cases):
-    """Converts DevelopmentCost objects to serializable dicts."""
+    """Converts DevelopmentCost objects and production data to serializable dicts."""
     serialized = {}
     for name, case in dev_cases.items():
         # Keep the structure but handle the 'dev_obj'
@@ -157,15 +157,25 @@ def serialize_dev_cases(dev_cases):
                 "cost_years": dev_obj.cost_years
             }
             del new_case["dev_obj"]
+        
+        # Ensure production parameters are also serialized if they are in the case root
+        # (Combined case structure)
         serialized[name] = new_case
     return serialized
 
 def deserialize_dev_cases(serialized_cases):
-    """Reconstructs DevelopmentCost objects from dicts."""
+    """Reconstructs DevelopmentCost objects and handles production profile data."""
     from development import DevelopmentCost
     deserialized = {}
     for name, case in serialized_cases.items():
         new_case = case.copy()
+        
+        # Handle production profile string-to-int key conversion if embedded
+        if "prod_profiles" in new_case:
+            for prof_type in ["gas", "oil", "drilling_plan"]:
+                if prof_type in new_case["prod_profiles"]:
+                    new_case["prod_profiles"][prof_type] = {int(k): v for k, v in new_case["prod_profiles"][prof_type].items()}
+
         if "dev_params_info" in new_case:
             info = new_case["dev_params_info"]
             dev_obj = DevelopmentCost(
@@ -220,20 +230,26 @@ def serialize_cashflow_results(results):
     for name, item in results.items():
         # item['cf'] is the CashFlowKOR object
         # item['inputs'] is dict of {prod_name, dev_name, price_name, global_params}
-        cf = item['cf']
-        if hasattr(cf, 'model_dump'):
-             cf_dict = cf.model_dump()
-        else:
-             cf_dict = cf.dict() # For Pydantic v1
         
-        # Remove complex objects or redundant large objects
-        if 'development_cost' in cf_dict:
-            del cf_dict['development_cost']
+        entry = {'inputs': item.get('inputs', {})}
+        
+        if 'cf' in item:
+            cf = item['cf']
+            if hasattr(cf, 'model_dump'):
+                 cf_dict = cf.model_dump()
+            else:
+                 cf_dict = cf.dict() # For Pydantic v1
             
-        serialized[name] = {
-            'cf_data': cf_dict,
-            'inputs': item.get('inputs', {})
-        }
+            # Remove complex objects or redundant large objects
+            if 'development_cost' in cf_dict:
+                del cf_dict['development_cost']
+            
+            entry['cf_data'] = cf_dict
+        
+        if 'result_summary' in item:
+            entry['result_summary'] = item['result_summary']
+            
+        serialized[name] = entry
     return serialized
 
 def deserialize_cashflow_results(data):
@@ -241,17 +257,23 @@ def deserialize_cashflow_results(data):
     from cashflow import CashFlowKOR
     results = {}
     for name, item in data.items():
-        cf_data = item.get('cf_data', {})
+        cf_data = item.get('cf_data')
         inputs = item.get('inputs', {})
         
-        # Note: Pydantic should handle the type conversion for keys (str -> int) automatically
-        # if the model fields are typed as Dict[int, float]. 
         try:
-            cf = CashFlowKOR(**cf_data)
-            results[name] = {'cf': cf, 'inputs': inputs}
+            res_item = {'inputs': inputs}
+            if cf_data:
+                cf = CashFlowKOR(**cf_data)
+                res_item['cf'] = cf
+            
+            if 'result_summary' in item:
+                res_item['result_summary'] = item['result_summary']
+            
+            if 'cf' in res_item or 'result_summary' in res_item:
+                results[name] = res_item
+                
         except Exception as e:
             print(f"Error deserializing cashflow result '{name}': {e}")
-            # Optionally fallback or skip
             
     return results
 

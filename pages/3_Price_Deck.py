@@ -141,7 +141,7 @@ with col_v2:
 
 st.divider()
 st.subheader("📁 Case Management")
-case_name = st.text_input("Enter Price Scenario Name", value="Base Forecast")
+case_name = st.text_input("Enter Price Scenario Name", value="Base Price")
 
 if st.button("💾 Save Price Scenario"):
     if not st.session_state.current_project:

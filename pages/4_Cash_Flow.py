@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from cashflow import CashFlowKOR
 from utils import ensure_state_init, render_project_sidebar
-from plotting import plot_cashflow, plot_cf_sankey_chart, plot_cf_waterfall_chart, plot_production_profile
+from plotting import plot_cashflow, plot_cf_sankey_chart, plot_cf_waterfall_chart, plot_production_profile, plot_cost_profile
 import io
 import plotly.graph_objects as go
 
@@ -16,7 +16,6 @@ render_project_sidebar()
 
 # --- Dependency Check ---
 missing_deps = []
-if not st.session_state.production_cases: missing_deps.append("Production")
 if not st.session_state.development_cases: missing_deps.append("Development")
 if not st.session_state.price_cases: missing_deps.append("Price Deck")
 if not st.session_state.current_project: missing_deps.append("Project")
@@ -27,23 +26,32 @@ if missing_deps:
 
 # --- Scenario Selection ---
 st.subheader("🏁 Run Economic Scenario")
-col_s1, col_s2, col_s3 = st.columns(3)
+col_s1, col_s2 = st.columns([1, 1])
 
 with col_s1.container(border=True, height="stretch"):
-    prod_name = st.selectbox("Select Production Case", list(st.session_state.production_cases.keys()))
-    prod_data = st.session_state.production_cases[prod_name]
-    gas_production = prod_data['profiles']["gas"]
-    oil_production = prod_data['profiles']["oil"]
-    st.write(f'Total Gas Prod. : {sum(gas_production.values()):,.2f}')
-    st.write(f'Total Oil Prod. : {sum(oil_production.values()):,.2f}')
-with col_s2.container(border=True, height="stretch"):
-    dev_name = st.selectbox("Select Development Case", list(st.session_state.development_cases.keys()))
+    dev_name = st.selectbox("Select Development (Combined) Case", list(st.session_state.development_cases.keys()))
     dev_data = st.session_state.development_cases[dev_name]
-    total_capex = dev_data['summary']["total_capex"]
-    total_opex = dev_data['summary']["total_opex"]
-    st.write(f'Total CAPEX : {total_capex:,.2f} MM$')
-    st.write(f'Total OPEX : {total_opex:,.2f} MM$')
-with col_s3.container(border=True, height="stretch"):
+    
+    # Extract Production and Development summaries
+    prod_profiles = dev_data.get('profiles', {})
+    gas_production = prod_profiles.get("gas", {})
+    oil_production = prod_profiles.get("oil", {})
+    
+    total_capex = dev_data.get('cost_summary', {}).get("total_capex", 0.0)
+    total_opex = dev_data.get('cost_summary', {}).get("total_opex", 0.0)
+    
+    st.markdown("**📋 Case Summary**")
+    col_sub1, col_sub2 = st.columns(2)
+    with col_sub1:
+        st.write(f'**Production**')
+        st.write(f'- Total Gas: {sum(gas_production.values()):,.1f} BCF')
+        st.write(f'- Total Oil: {sum(oil_production.values()):,.1f} MMbbl')
+    with col_sub2:
+        st.write(f'**Costs**')
+        st.write(f'- Total CAPEX : {total_capex:,.1f} MM$')
+        st.write(f'- Total OPEX : {total_opex:,.1f} MM$')
+
+with col_s2.container(border=True, height="stretch"):
     price_name = st.selectbox("Select Price Scenario", list(st.session_state.price_cases.keys()))
     price_data = st.session_state.price_cases[price_name]
     years = list(price_data['gas'].keys())
@@ -56,8 +64,8 @@ with col_s3.container(border=True, height="stretch"):
         title='Price Profile', 
         xaxis_title='Year', 
         yaxis_title='Price (USD)',
-        # margin=dict(l=20, r=20, t=40, b=20),
-        height=300
+        height=250,
+        margin=dict(l=0, r=0, t=30, b=0)
     )
     st.plotly_chart(fig, use_container_width=True)
 
@@ -75,12 +83,11 @@ with st.expander("⚙️ Global Economic Parameters"):
         useful_life = st.number_input("Useful Life (Depreciation)", value=10)
 
 # --- Run Button ---
-run_button = st.button("🚀 Run Cash Flow Analysis", width='content', type="secondary")
+run_button = st.button("🚀 Run Cash Flow Analysis", width='content', type="primary")
 
 if run_button:
     # --- Calculation ---
     project_name = st.session_state.current_project
-    p_case = st.session_state.production_cases[prod_name]
     d_case = st.session_state.development_cases[dev_name]
     s_case = st.session_state.price_cases[price_name]
     
@@ -97,25 +104,19 @@ if run_button:
     )
     
     # Set Development and Production
-    # IMPORTANT: Use the production profiles from the dev_obj because they are already 
-    # shifted to the actual calendar years (drill_start_year).
     cf.set_development_costs(dev_obj, output=False)
     
-    # Precaution: if for some reason dev_obj has indices instead of years, shift them
+    # Precaution: shift indices if needed
     def ensure_actual_years(d, start_year):
         if not d: return {}
         min_key = min(d.keys())
-        if min_key < 1000: # It's likely an index (1, 2, 3...)
-            return {int(k) + start_year: v for k, v in d.items()}
+        if min_key < 1000: return {int(k) + start_year: v for k, v in d.items()}
         return {int(k): v for k, v in d.items()}
 
     oil_shifted = ensure_actual_years(dev_obj.annual_oil_production, dev_obj.drill_start_year)
     gas_shifted = ensure_actual_years(dev_obj.annual_gas_production, dev_obj.drill_start_year)
 
-    cf.set_production_profile_from_dicts(
-        oil_dict=oil_shifted,
-        gas_dict=gas_shifted
-    )
+    cf.set_production_profile_from_dicts(oil_dict=oil_shifted, gas_dict=gas_shifted)
     
     # Run Full Cycle
     cf.calculate_annual_revenue(output=False)
@@ -128,13 +129,11 @@ if run_button:
     # Store result in session state
     st.session_state.last_cf_result = {
         'cf': cf,
-        'prod_name': prod_name,
         'dev_name': dev_name,
         'price_name': price_name,
         'dev_obj': dev_obj,
         'project_name': project_name,
         'inputs': {
-            'prod_name': prod_name,
             'dev_name': dev_name,
             'price_name': price_name,
             'global_params': {
@@ -152,7 +151,6 @@ if run_button:
 if st.session_state.get('last_cf_result'):
     res = st.session_state.last_cf_result
     cf = res['cf']
-    prod_name = res['prod_name']
     dev_name = res['dev_name']
     price_name = res['price_name']
     dev_obj = res['dev_obj']
@@ -226,7 +224,7 @@ if st.session_state.get('last_cf_result'):
     with st.container():
         col_save1, col_save2 = st.columns([3, 1])
         with col_save1:
-            default_name = f"Result_{prod_name}_{dev_name}_{price_name}"
+            default_name = f"Result_{dev_name}_{price_name}"
             save_name = st.text_input("Result Name", value=default_name, key="save_res_name")
         with col_save2:
             st.write("") # Spacer
@@ -235,6 +233,7 @@ if st.session_state.get('last_cf_result'):
                 if save_name:
                     st.session_state.cashflow_results[save_name] = {
                         'cf': cf,
+                        'result_summary': cf.get_project_summary(),
                         'inputs': res['inputs']
                     }
                     save_project(st.session_state.current_project)
@@ -259,7 +258,7 @@ if st.session_state.get('last_cf_result'):
     st.download_button(
         label="📥 Download Full Economic Report (Excel)",
         data=output.getvalue(),
-        file_name=f"economic_report_{project_name}_{prod_name}_{dev_name}_{price_name}.xlsx",
+        file_name=f"economic_report_{project_name}_{dev_name}_{price_name}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
