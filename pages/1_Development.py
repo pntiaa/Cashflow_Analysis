@@ -1,3 +1,4 @@
+from streamlit import session_state
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -74,6 +75,7 @@ with st.expander("Production Setup", expanded=True):
                 profile = st.session_state.profile
                 profile.production_duration = int(prod_duration)
                 wells_to_drill = math.ceil(giip_bcf / well_eur_bcf)
+                st.session_state.wells_to_drill = wells_to_drill
 
                 drilling_plan = profile.make_drilling_plan(total_wells_number=wells_to_drill, drilling_rate=drilling_rate)
                 gas_profile = profile.make_production_profile_yearly(peak_production_annual=max_prod_rate if max_prod_rate > 0 else None)
@@ -91,19 +93,13 @@ with st.expander("Production Setup", expanded=True):
 
         if st.session_state.prod_data is not None:
             st.plotly_chart(px.bar(st.session_state.prod_data, x='Year', y='Gas Production (BCF/y)', title="Annual Field Gas Production"), width='stretch')
-            st.info(f"🔢 **Estimated Total Wells: {wells_to_drill}** (based on {giip_bcf:,.1f} BCF Reserves / {well_eur_bcf:,.1f} BCF Well EUR)")
+            st.info(f"🔢 **Estimated Total Wells: {st.session_state.wells_to_drill}** (based on {giip_bcf:,.1f} BCF Reserves / {well_eur_bcf:,.1f} BCF Well EUR)")
 
 st.space(size="small")
 
 st.subheader("🛠️ Development Cost Generation")
 with st.expander("Detailed Development Parameter Editor", expanded=True):
     
-    with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
-        st.text("Project Timing", width=200)
-        dev_start_year = st.number_input("Development Start Year", value=2026, step=1, width=200)
-        drill_start_year = st.number_input("Production Drilling Start Year", value=2033, step=1, width=200)
-        dev_case = st.radio("Development Case", options=["FPSO_case", "tie-back_case"])
-
     with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
         st.text("🔍 Exploration Costs", width=200)
         sunk_cost = st.number_input("Sunk Cost", value=0.0)
@@ -114,11 +110,19 @@ with st.expander("Detailed Development Parameter Editor", expanded=True):
                 "Year": years_range,
                 "Exploration Costs (MM$)": [0.0] * 10
             }
-            st.session_state.exploration_data = pd.DataFrame(exploration_data).set_index("Year").T
-
+            exploration_df = pd.DataFrame(exploration_data).set_index("Year")
+            exploration_df.index = exploration_df.index.astype(int)
+            st.session_state.exploration_data = exploration_df.T
+    
     with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
         if "exploration_data" in st.session_state:
-            st.data_editor(st.session_state.exploration_data, width='stretch')
+            st.session_state.exploration_data = st.data_editor(st.session_state.exploration_data, width='stretch')
+
+    with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
+        st.text("🗓️ Project Timing", width=200)
+        dev_start_year = st.number_input("Development Start Year", value=2026, step=1, width=200)
+        drill_start_year = st.number_input("Production Drilling Start Year", value=2033, step=1, width=200)
+        dev_case = st.radio("Development Case", options=["FPSO_case", "tie-back_case"])
 
     with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
         st.text("📋 Study & PM Costs", width=200)
@@ -154,28 +158,35 @@ if st.button("🔄 Apply Parameters & Calculate", width='content', type="primary
     if st.session_state.prod_data is None:
         st.error("⚠️ Please generate a Production Profile in the first tab first.")
     else:
+        # Set exploration stage costs
+        st.session_state.exploration_df = st.session_state.exploration_data.T
+        st.session_state.exploration_df.index = st.session_state.exploration_df.index.astype(int)
+        exploration_costs_dict_tmp = st.session_state.exploration_df['Exploration Costs (MM$)'].to_dict()
+        exploration_costs_dict = {int(k): v for k, v in exploration_costs_dict_tmp.items()}
+        st.session_state.exploration_costs_dict = exploration_costs_dict
         dev = DevelopmentCost(dev_start_year=dev_start_year, dev_param=dev_param, development_case=dev_case)
         dev.set_drilling_schedule(drill_start_year=drill_start_year, yearly_drilling_schedule=st.session_state.drilling_plan_results)
         dev.set_annual_production(
             annual_gas_production=dict(zip(st.session_state.prod_data['Year'], st.session_state.prod_data['Gas Production (BCF/y)'])),
             annual_oil_production=dict(zip(st.session_state.prod_data['Year'], st.session_state.prod_data['Oil Production (MMbbl/y)']))
         )
-        dev.calculate_total_costs()
-        st.session_state.current_dev_obj = dev
-        st.session_state.dev_results_ready = True
-        # Set exploration stage costs
-        exploration_costs_dict = exploration_df.set_index('year')['exploration costs (MM$)'].to_dict()
         dev.set_exploration_stage(
             exploration_start_year = exploration_start_year,
             exploration_costs=exploration_costs_dict,
             sunk_cost=sunk_cost,
         )
+        dev.calculate_total_costs()
+        st.session_state.current_dev_obj = dev
+        st.session_state.dev_results_ready = True
 
 if st.session_state.get('dev_results_ready'):
     dev = st.session_state.current_dev_obj
-    years = sorted(dev.total_annual_costs.keys())
+
+    # year가 exploration start year엡
+    years = sorted(dev.cost_years)
     cost_df = pd.DataFrame({
         'Year': years,
+        'Exploration': [dev.exploration_costs.get(y, 0.0) for y in years],
         'CAPEX': [dev.annual_capex.get(y, 0.0) for y in years],
         'OPEX': [dev.annual_opex.get(y, 0.0) for y in years],
         'ABEX': [dev.annual_abex.get(y, 0.0) for y in years]

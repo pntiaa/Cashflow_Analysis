@@ -131,7 +131,7 @@ class DevelopmentCost:
         years = set()
         if exploration_costs:
              max_year = max(exploration_costs.keys()) 
-             years = set(range(exploration_start_year, max_year + 1))
+             years = set(range(int(exploration_start_year), int(max_year) + 1))
         
         years |= set(self.cost_years)
         years = sorted(list(years))
