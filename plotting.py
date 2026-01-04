@@ -26,6 +26,25 @@ def plot_production_profile(cf, show: bool = True):
     fig.update_layout(title='Production Profile', xaxis_title='Year', yaxis_title='Production (MM barrels)')
     return fig
 
+# DevelopmentCost class plotting functions
+def plot_dev_prod_profile(dev):    
+    p_years = sorted(dev.production_years)
+    gas_vals = [dev.annual_gas_production.get(y, 0.0) for y in p_years]
+    oil_vals = [dev.annual_oil_production.get(y, 0.0) for y in p_years]
+    
+    fig_p = go.Figure()
+    fig_p.add_trace(go.Scatter(x=p_years, y=gas_vals, mode='lines+markers', name='Gas (BCF)'))
+    fig_p.add_trace(go.Scatter(x=p_years, y=oil_vals, mode='lines+markers', name='Oil/Cond. (MMbbl)'))
+    
+    fig_p.update_layout(
+        title="Annual Production Profile",
+        xaxis_title="Year",
+        yaxis_title="Volume",
+        legend_title="Product"
+    )
+    return fig_p
+
+
 def plot_dev_cost_profile(dev):
     color_palette = px.colors.qualitative.Pastel
     years = sorted(dev.cost_years)
@@ -49,23 +68,6 @@ def plot_dev_cost_profile(dev):
     )
     return fig
     
-def plot_dev_prod_profile(dev):    
-    p_years = sorted(dev.production_years)
-    gas_vals = [dev.annual_gas_production.get(y, 0.0) for y in p_years]
-    oil_vals = [dev.annual_oil_production.get(y, 0.0) for y in p_years]
-    
-    fig_p = go.Figure()
-    fig_p.add_trace(go.Scatter(x=p_years, y=gas_vals, mode='lines+markers', name='Gas (BCF)'))
-    fig_p.add_trace(go.Scatter(x=p_years, y=oil_vals, mode='lines+markers', name='Oil/Cond. (MMbbl)'))
-    
-    fig_p.update_layout(
-        title="Annual Production Profile",
-        xaxis_title="Year",
-        yaxis_title="Volume",
-        legend_title="Product"
-    )
-    return fig_p
-
 def plot_price(cf):
     """
     Plot price profile using Plotly.
@@ -85,7 +87,6 @@ def plot_price(cf):
     return fig
 
 
-# DevelopmentCost class plotting functions
 def plot_cost_profile(dev_cost):
     """
     Plot annual capex/opex/abex stacked bar and cumulative curve using Plotly.

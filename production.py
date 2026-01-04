@@ -193,9 +193,6 @@ class YearlyProductionProfile:
         ax2.set_ylabel('Cumulative Production (Bcf)')
         ax2.legend(loc='best')
 
-
-
-
 if __name__ == "__main__":
     # Example usage
     profile = YearlyProductionProfile(production_duration=20)
