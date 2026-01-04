@@ -19,11 +19,14 @@ render_project_sidebar()
 
 # st.write("### Development Parameters")
 # st.caption("Development Parameters")
+st.subheader("🏗️ Development Cost from QUE$TOR")
+
 dev_start_year = st.number_input("Development Start Year", value=2024)
 
 # --- 1. File Upload Section ---
-col_1, col_2 = st.columns(2)
 
+
+col_1, col_2 = st.columns(2)
 with col_1.container(border=True, height="stretch"):
     # st.write("### Upload QUE$TOR Excel File")
     uploaded_file = st.file_uploader("Choose a QUE$TOR Excel file", type=["xlsx"])
@@ -51,6 +54,26 @@ with col_2.container(border=True, height="stretch"):
         except Exception as e:
             st.error(f"❌ Error loading file: {e}")
             st.info("Ensure the sheet name is correct and the file matches the expected QUE$TOR format.")
+
+st.space(size="small")
+
+with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
+    st.text("🔍 Exploration Costs", width=200)
+    sunk_cost = st.number_input("Sunk Cost", value=0.0)
+    exploration_start_year = st.number_input("Exploration Start Year", value=2024, step=1)
+    years_range = list(range(int(exploration_start_year), int(exploration_start_year) + 10))
+    if st.button("🔄 Exploration Costs Manual Input"):
+        exploration_data = {
+            "Year": years_range,
+            "Exploration Costs (MM$)": [0.0] * 10
+        }
+        exploration_df = pd.DataFrame(exploration_data).set_index("Year")
+        exploration_df.index = exploration_df.index.astype(int)
+        st.session_state.exploration_data = exploration_df.T
+
+with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
+    if "exploration_data" in st.session_state:
+        st.session_state.exploration_data = st.data_editor(st.session_state.exploration_data, width='stretch')
 
 # --- 2. Calculation Section ---
 if st.button("Apply Parameters & Calculate", type="primary"):

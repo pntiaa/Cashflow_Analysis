@@ -9,6 +9,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from utils import ensure_state_init, save_project, render_project_sidebar
+from plotting import plot_dev_cost_profile
 
 st.set_page_config(page_title="Development & Production", layout="wide")
 
@@ -58,7 +59,6 @@ with st.expander("Production Setup", expanded=True):
         if st.session_state.tc_data is not None:
             tc_df = st.session_state.tc_data
             st.plotly_chart(px.line(tc_df, x='Year', y='Annual Rate (MMcf/y)', title="Annual Rate vs. Years"), width='stretch')
-            # st.plotly_chart(px.line(tc_df, x='Year', y='Cumulative Production (MMcf)', title="Cumulative Production vs. Years"), width='stretch')
 
     with t2:
         with st.container(horizontal=True, gap="small"):
@@ -158,12 +158,9 @@ if st.button("🔄 Apply Parameters & Calculate", width='content', type="primary
     if st.session_state.prod_data is None:
         st.error("⚠️ Please generate a Production Profile in the first tab first.")
     else:
-        # Set exploration stage costs
         st.session_state.exploration_df = st.session_state.exploration_data.T
         st.session_state.exploration_df.index = st.session_state.exploration_df.index.astype(int)
-        exploration_costs_dict_tmp = st.session_state.exploration_df['Exploration Costs (MM$)'].to_dict()
-        exploration_costs_dict = {int(k): v for k, v in exploration_costs_dict_tmp.items()}
-        st.session_state.exploration_costs_dict = exploration_costs_dict
+        exploration_costs_dict = st.session_state.exploration_df['Exploration Costs (MM$)'].to_dict()
         dev = DevelopmentCost(dev_start_year=dev_start_year, dev_param=dev_param, development_case=dev_case)
         dev.set_drilling_schedule(drill_start_year=drill_start_year, yearly_drilling_schedule=st.session_state.drilling_plan_results)
         dev.set_annual_production(
@@ -181,17 +178,19 @@ if st.button("🔄 Apply Parameters & Calculate", width='content', type="primary
 
 if st.session_state.get('dev_results_ready'):
     dev = st.session_state.current_dev_obj
-
-    # year가 exploration start year엡
-    years = sorted(dev.cost_years)
-    cost_df = pd.DataFrame({
-        'Year': years,
-        'Exploration': [dev.exploration_costs.get(y, 0.0) for y in years],
-        'CAPEX': [dev.annual_capex.get(y, 0.0) for y in years],
-        'OPEX': [dev.annual_opex.get(y, 0.0) for y in years],
-        'ABEX': [dev.annual_abex.get(y, 0.0) for y in years]
-    })
-    st.plotly_chart(px.bar(cost_df, x='Year', y=['CAPEX', 'OPEX', 'ABEX'], title="Annual Expenditures (MM$)"), width='stretch')
+    # years = sorted(set(dev.cost_years + list(dev.exploration_costs.keys()) + list(dev.annual_gas_production.keys()) + list(dev.annual_oil_production.keys()) + list(dev.annual_capex.keys()) + list(dev.annual_abex.keys())))
+    # cost_df = pd.DataFrame({
+    #     'Year': years,  
+    #     'Exp_Cost': [dev.exploration_costs.get(y, 0.0) for y in years],
+    #     'CAPEX': [dev.annual_capex.get(y, 0.0) for y in years],
+    #     'OPEX': [dev.annual_opex.get(y, 0.0) for y in years],
+    #     'ABEX': [dev.annual_abex.get(y, 0.0) for y in years]
+    # })
+    # st.plotly_chart(px.bar(cost_df, 
+    #     x='Year', 
+    #     y=['Exp_Cost','CAPEX', 'OPEX', 'ABEX'], 
+    #     title="Annual Expenditures (MM$)"), theme=None, width='stretch')
+    st.plotly_chart(plot_dev_cost_profile(dev))
 
 # --- Integrated Case Management ---
 st.divider()

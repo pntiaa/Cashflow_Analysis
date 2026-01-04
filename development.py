@@ -437,8 +437,10 @@ class DevelopmentCost:
 
         # cost years update
         years = set(self.cost_years)
+        years |= set(self.exploration_costs.keys())
         years |= set(self.annual_gas_production.keys())
         years |= set(self.annual_oil_production.keys())
+        years |= set(self.annual_capex.keys())
         years |= set(self.annual_abex.keys())
         self.cost_years = list(years)
 

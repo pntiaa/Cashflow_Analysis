@@ -26,17 +26,19 @@ def plot_production_profile(cf, show: bool = True):
     fig.update_layout(title='Production Profile', xaxis_title='Year', yaxis_title='Production (MM barrels)')
     return fig
 
-
 def plot_dev_cost_profile(dev):
+    color_palette = px.colors.qualitative.Pastel
     years = sorted(dev.cost_years)
+    exp_vals = [dev.exploration_costs.get(y, 0.0) for y in years]
     capex_vals = [dev.annual_capex.get(y, 0.0) for y in years]
     opex_vals = [dev.annual_opex.get(y, 0.0) for y in years]
     abex_vals = [dev.annual_abex.get(y, 0.0) for y in years]
     
     fig = go.Figure()
-    fig.add_trace(go.Bar(x=years, y=capex_vals, name='CAPEX'))
-    fig.add_trace(go.Bar(x=years, y=opex_vals, name='OPEX'))
-    fig.add_trace(go.Bar(x=years, y=abex_vals, name='ABEX'))
+    fig.add_trace(go.Bar(x=years, y=exp_vals, marker_color=color_palette[0], name='Exploration'))
+    fig.add_trace(go.Bar(x=years, y=capex_vals, marker_color=color_palette[1], name='CAPEX'))
+    fig.add_trace(go.Bar(x=years, y=opex_vals, marker_color=color_palette[2], name='OPEX'))
+    fig.add_trace(go.Bar(x=years, y=abex_vals, marker_color=color_palette[3], name='ABEX'))
     
     fig.update_layout(
         barmode='stack',
@@ -141,7 +143,6 @@ def plot_cost_profile(dev_cost):
 
     plt.tight_layout()
     return fig
-
 
 def plot_total_annual_costs(dev_cost):
     """
