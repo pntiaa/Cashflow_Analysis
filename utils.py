@@ -32,6 +32,33 @@ def ensure_state_init():
     if "drilling_plan_results" not in st.session_state:
         st.session_state.drilling_plan_results = None
 
+def sanitize_data(data):
+    """
+    Recursively converts numpy types (int64, float64, ndarray) to native Python types (int, float, list).
+    Ensures dictionary keys are also converted to native strings or ints.
+    """
+    if isinstance(data, dict):
+        new_dict = {}
+        for k, v in data.items():
+            # Sanitize key
+            if isinstance(k, (np.integer, np.int64)):
+                k = int(k)
+            elif isinstance(k, (np.floating, np.float64)):
+                k = float(k)
+            # Sanitize value
+            new_dict[k] = sanitize_data(v)
+        return new_dict
+    elif isinstance(data, list):
+        return [sanitize_data(i) for i in data]
+    elif isinstance(data, (np.integer, np.int64)):
+        return int(data)
+    elif isinstance(data, (np.floating, np.float64)):
+        return float(data)
+    elif isinstance(data, np.ndarray):
+        return sanitize_data(data.tolist())
+    else:
+        return data
+
 def save_project(project_name: str):
     if not project_name:
         return
@@ -41,12 +68,15 @@ def save_project(project_name: str):
     # Note: development_cases contains objects that need special handling.
     # For now, let's filter out non-serializable objects or convert them.
     
-    data_to_save = {
+    raw_data = {
         "production_cases": st.session_state.production_cases,
         "development_cases": serialize_dev_cases(st.session_state.development_cases),
         "price_cases": st.session_state.price_cases,
         "cashflow_results": serialize_cashflow_results(st.session_state.cashflow_results)
     }
+    
+    # Sanitize all data to ensure no numpy types cause JSON errors
+    data_to_save = sanitize_data(raw_data)
     
     with open(file_path, "w") as f:
         json.dump(data_to_save, f, indent=4)
@@ -339,4 +369,99 @@ class PriceDeck:
                 self.oil_price_by_year[y] = self.oil_price_by_year.get(flat_after_year, self.oil_price_by_year[max(self.oil_price_by_year.keys())])
                 self.gas_price_by_year[y] = self.gas_price_by_year.get(flat_after_year, self.gas_price_by_year[max(self.gas_price_by_year.keys())])
         return self.oil_price_by_year, self.gas_price_by_year
+
+
+def get_all_projects_summary() -> pd.DataFrame:
+    """
+    Scans all project JSON files in DATA_DIR and returns a summary DataFrame.
+    Columns: Project Name, Gas Reserves (BCF), Oil Reserves (MMbbl), 
+             Total Revenue, Total CAPEX, Net Cash Flow, NPV (Discounted), IRR
+    """
+    rows = []
+    projects = list_projects()
+    
+    for proj_name in projects:
+        file_path = DATA_DIR / f"{proj_name}.json"
+        
+        # Default Row Dictionary
+        row = {
+            "Project Name": proj_name,
+            "Gas Reserves (BCF)": "not calculated yet",
+            "Oil Reserves (MMbbl)": "not calculated yet",
+            "Total Revenue ($MM)": "not calculated yet",
+            "Total CAPEX ($MM)": "not calculated yet",
+            "Net Cash Flow ($MM)": "not calculated yet",
+            "NPV (Discounted) ($MM)": "not calculated yet",
+            "IRR (%)": "not calculated yet"
+        }
+        
+        try:
+            with open(file_path, "r") as f:
+                data = json.load(f)
+            
+            # Check for Cashflow Results
+            cf_results = data.get("cashflow_results", {})
+            
+            if cf_results:
+                # Pick the first one
+                first_key = list(cf_results.keys())[0]
+                res_item = cf_results[first_key]
+                summary = res_item.get("result_summary", {})
+                inputs = res_item.get("inputs", {})
+                
+                # Metrics
+                if summary:
+                    row["Total Revenue ($MM)"] = f"{summary.get('total_revenue', 0):,.0f}"
+                    row["Total CAPEX ($MM)"] = f"{summary.get('total_capex', 0):,.0f}"
+                    # final_cumulative is Net Cash Flow (Total) as per pages/4_Cash_Flow.py logic
+                    row["Net Cash Flow ($MM)"] = f"{summary.get('final_cumulative', 0):,.0f}"
+                    row["NPV (Discounted) ($MM)"] = f"{summary.get('npv', 0):,.0f}"
+                    
+                    irr_val = summary.get('irr', 'N/A')
+                    if isinstance(irr_val, (int, float)):
+                        row["IRR (%)"] = f"{irr_val*100:.1f}%"
+                    else:
+                        row["IRR (%)"] = "N/A"
+                
+                # Reserves (Need to look up Linked Development Case)
+                dev_name = inputs.get("dev_name")
+                if dev_name:
+                    dev_cases = data.get("development_cases", {})
+                    dev_data = dev_cases.get(dev_name, {})
+                    
+                    # Try to find profiles
+                    # In serialized form, it might be in 'profiles' key (as saved in pages/1_Development.py)
+                    # or 'dev_params_info' -> 'annual_gas_production' if purely serialized object
+                    
+                    profiles = dev_data.get("profiles", {})
+                    gas_prof = profiles.get("gas", {})
+                    oil_prof = profiles.get("oil", {})
+                    
+                    # Fallback to dev_params_info if profiles not found
+                    if not gas_prof and "dev_params_info" in dev_data:
+                        gas_prof = dev_data["dev_params_info"].get("annual_gas_production", {})
+                        oil_prof = dev_data["dev_params_info"].get("annual_oil_production", {})
+
+                    if gas_prof:
+                        total_gas = sum(float(v) for v in gas_prof.values())
+                        row["Gas Reserves (BCF)"] = f"{total_gas:,.1f}"
+                    
+                    if oil_prof:
+                        total_oil = sum(float(v) for v in oil_prof.values())
+                        row["Oil Reserves (MMbbl)"] = f"{total_oil:,.1f}"
+                        
+        except Exception as e:
+            print(f"Error reading project {proj_name}: {e}")
+            
+        rows.append(row)
+        
+    if not rows:
+        return pd.DataFrame(columns=[
+            "Project Name", "Gas Reserves (BCF)", "Oil Reserves (MMbbl)", 
+            "Total Revenue ($MM)", "Total CAPEX ($MM)", "Net Cash Flow ($MM)", 
+            "NPV (Discounted) ($MM)", "IRR (%)"
+        ])
+        
+    return pd.DataFrame(rows)
+
 

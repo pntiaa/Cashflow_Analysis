@@ -17,14 +17,85 @@ st.space(size="large")
 ensure_state_init()
 render_project_sidebar()
 
+# --- Top-Level Case Management ---
+st.divider()
+st.subheader("📁 Case Management")
+col_c1, col_c2, col_c3 = st.columns([2, 2, 1])
+
+with col_c1:
+    # Load Case
+    existing_cases = list(st.session_state.development_cases.keys())
+    cases_options = ["Select a case..."] + existing_cases
+    selected_case = st.selectbox("Load Saved Case", options=cases_options, key="questor_load_case_selector")
+
+    if selected_case != "Select a case...":
+        if st.button("📂 Load Selected Case"):
+            case_data = st.session_state.development_cases[selected_case]
+            
+            # 1. Restore Input Parameters
+            if "input_params" in case_data:
+                params = case_data["input_params"]
+                st.session_state.q_dev_start_year = params.get("dev_start_year", 2024)
+                st.session_state.q_sunk_cost = params.get("sunk_cost", 0.0)
+                st.session_state.q_exp_start_year = params.get("exp_start_year", 2024)
+                # Sheet name can be informational if file not loaded
+                if "sheet_name" in params:
+                    st.session_state.last_loaded_sheet_name = params["sheet_name"]
+
+            # 2. Restore Results & Visualizations (Crucial for user request)
+            if "dev_obj" in case_data:
+                st.session_state.last_questor_obj = case_data["dev_obj"]
+            
+            st.success(f"Case '{selected_case}' loaded! Visualizations restored.")
+            st.rerun()
+
+with col_c2:
+    # Save Case
+    new_case_name = st.text_input("New Case Name", value="Questor Case", key="new_questor_case_name")
+    if st.button("💾 Save Current Case"):
+        if not st.session_state.current_project:
+            st.error("⚠️ No active project! Please create or select a project in the Sidebar first.")
+        elif "last_questor_obj" not in st.session_state:
+            st.error("⚠️ Please calculate results before saving (or load a valid case).")
+        else:
+            q_dev = st.session_state.last_questor_obj
+            
+            # Collect Input Params
+            input_params = {
+                "dev_start_year": st.session_state.get("q_dev_start_year"),
+                "sunk_cost": st.session_state.get("q_sunk_cost"),
+                "exp_start_year": st.session_state.get("q_exp_start_year"),
+                "sheet_name": st.session_state.get("q_sheet_name_selector") # Capture if set
+            }
+            
+            # Construct Case Data
+            dev_case = {
+                "input_params": input_params,
+                "dev_obj": q_dev, 
+                "cost_summary": {
+                    "total_capex": q_dev.total_capex,
+                    "total_opex": q_dev.total_opex,
+                    "total_abex": q_dev.total_abex
+                },
+                "profiles": {
+                    "gas": q_dev.annual_gas_production,
+                    "oil": q_dev.annual_oil_production,
+                    "drilling_plan": getattr(q_dev, 'yearly_drilling_schedule', {})
+                },
+            }
+            st.session_state.development_cases[new_case_name] = dev_case
+            save_project(st.session_state.current_project)
+            st.success(f"Case '{new_case_name}' saved to project '{st.session_state.current_project}'!")
+
+st.divider()
+
 # st.write("### Development Parameters")
 # st.caption("Development Parameters")
 st.subheader("🏗️ Development Cost from QUE$TOR")
 
-dev_start_year = st.number_input("Development Start Year", value=2024)
+dev_start_year = st.number_input("Development Start Year", value=2024, key="q_dev_start_year")
 
 # --- 1. File Upload Section ---
-
 
 col_1, col_2 = st.columns(2)
 with col_1.container(border=True, height="stretch"):
@@ -38,9 +109,11 @@ with col_1.container(border=True, height="stretch"):
         
         # Set default index if "Economic Detail" exists
         default_idx = sheet_names.index("Economic Detail") if "Economic Detail" in sheet_names else 0
-        sheet_name = st.selectbox("Select Excel Sheet", options=sheet_names, index=default_idx)
+        sheet_name = st.selectbox("Select Excel Sheet", options=sheet_names, index=default_idx, key="q_sheet_name_selector")
     else:
         st.info("💡 Please upload a QUE$TOR Excel file to get started.")
+        if "last_loaded_sheet_name" in st.session_state:
+            st.info(f"ℹ️ Last loaded case used sheet: **{st.session_state.last_loaded_sheet_name}**")
 
 with col_2.container(border=True, height="stretch"):
     # st.write("### Data Preview")
@@ -59,8 +132,8 @@ st.space(size="small")
 
 with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
     st.text("🔍 Exploration Costs", width=200)
-    sunk_cost = st.number_input("Sunk Cost", value=0.0)
-    exploration_start_year = st.number_input("Exploration Start Year", value=2024, step=1)
+    sunk_cost = st.number_input("Sunk Cost", value=0.0, key="q_sunk_cost")
+    exploration_start_year = st.number_input("Exploration Start Year", value=2024, step=1, key="q_exp_start_year")
     years_range = list(range(int(exploration_start_year), int(exploration_start_year) + 10))
     if st.button("🔄 Exploration Costs Manual Input"):
         exploration_data = {
@@ -77,28 +150,32 @@ with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
 
 # --- 2. Calculation Section ---
 if st.button("Apply Parameters & Calculate", type="primary"):
-    # Save uploaded file to a temporary location for the class to read
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
-        tmp.write(uploaded_file.getbuffer())
-        tmp_path = tmp.name
-    
-    try:
-        # Initialize QuestorDevelopmentCost
-        q_dev = QuestorDevelopmentCost(
-            dev_start_year=dev_start_year,
-            excel_file_path=tmp_path,
-            sheet_name=sheet_name
-        )
+    if uploaded_file is None:
+        st.error("⚠️ Please upload a Questor file first.")
+    else:
+        # Save uploaded file to a temporary location for the class to read
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
+            tmp.write(uploaded_file.getbuffer())
+            tmp_path = tmp.name
         
-        # Store in session state for saving later
-        st.session_state.last_questor_obj = q_dev
-        
-        st.success("✅ Calculation successful!")
-        
-    finally:
-        # Cleanup temp file
-        if os.path.exists(tmp_path):
-            os.remove(tmp_path)
+        try:
+            # Initialize QuestorDevelopmentCost
+            q_dev = QuestorDevelopmentCost(
+                dev_start_year=dev_start_year,
+                excel_file_path=tmp_path,
+                sheet_name=sheet_name
+            )
+            
+            # Store in session state for saving later
+            st.session_state.last_questor_obj = q_dev
+            
+            st.success("✅ Calculation successful!")
+            st.rerun() # Refresh to show graphs
+            
+        finally:
+            # Cleanup temp file
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
 
 # --- 3. Visualization ---
 
@@ -112,31 +189,3 @@ if "last_questor_obj" in st.session_state:
     st.plotly_chart(plot_dev_prod_profile(q_dev), width='stretch')
     
     st.divider()
-                
-# --- 5. Case Management ---
-st.header("📁 Case Management")
-case_name = st.text_input("Enter Case Name (Used for both Dev & Prod)", value="Questor Case")
-
-if st.button("💾 Save Questor Case (Dev & Prod)"):
-    if not st.session_state.current_project:
-        st.error("⚠️ No active project! Please create or select a project in the Sidebar first.")
-    else:
-        # 1. Save Development Case & Production Case
-        # We need to ensure drilling_plan is at least an empty dict to avoid errors
-        dev_case = {
-            "dev_obj": q_dev, 
-            "cost_summary": {
-                "total_capex": q_dev.total_capex,
-                "total_opex": q_dev.total_opex,
-                "total_abex": q_dev.total_abex
-            },
-            "profiles": {
-                "gas": q_dev.annual_gas_production,
-                "oil": q_dev.annual_oil_production,
-                "drilling_plan": getattr(q_dev, 'yearly_drilling_schedule', {})
-            },
-        }
-        st.session_state.development_cases[case_name] = dev_case
-
-        save_project(st.session_state.current_project)
-        st.success(f"Case '{case_name}' saved to Dev & Production project '{st.session_state.current_project}'!")

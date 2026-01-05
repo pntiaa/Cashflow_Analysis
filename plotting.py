@@ -584,3 +584,76 @@ def plot_cf_sankey_chart(cf, width=800, height=600):
     )
 
     return fig
+
+
+def plot_detailed_cost_breakdown(dev):
+    """
+    Plots a detailed stacked bar chart of all cost components.
+    Breakdown includes individual CAPEX items, plus OPEX and ABEX.
+    """
+    breakdown = dev.get_cost_breakdown()
+    capex_items = breakdown.get('capex_breakdown', {})
+    annual_opex = breakdown.get('annual_opex', {})
+    annual_abex = breakdown.get('annual_abex', {})
+    
+    # Collect all relevant years
+    years = sorted(list(set(annual_opex.keys()) | set(annual_abex.keys())))
+    for item_costs in capex_items.values():
+        years.extend(item_costs.keys())
+    years = sorted(list(set(years)))
+    
+    if not years:
+        return go.Figure()
+
+    fig = go.Figure()
+    
+    # CAPEX Items
+    # Use a color palette for CAPEX items
+    colors = px.colors.qualitative.Pastel
+    color_idx = 0
+    
+    for item_name, cost_dict in capex_items.items():
+        # Skip if item has no cost
+        # But ensure we are summing floats
+        total_cost = sum(float(v) for v in cost_dict.values())
+        if total_cost == 0:
+            continue
+            
+        vals = [cost_dict.get(y, 0.0) for y in years]
+        fig.add_trace(go.Bar(
+            x=years, 
+            y=vals, 
+            name=f"{item_name.replace('_', ' ').title()}",
+            marker_color=colors[color_idx % len(colors)]
+        ))
+        color_idx += 1
+        
+    # OPEX
+    opex_vals = [annual_opex.get(y, 0.0) for y in years]
+    if sum(opex_vals) > 0:
+        fig.add_trace(go.Bar(
+            x=years, 
+            y=opex_vals, 
+            name='OPEX',
+            marker_color='rgba(150, 150, 150, 0.6)' 
+        ))
+
+    # ABEX
+    abex_vals = [annual_abex.get(y, 0.0) for y in years]
+    if sum(abex_vals) > 0:
+        fig.add_trace(go.Bar(
+            x=years, 
+            y=abex_vals, 
+            name='ABEX',
+            marker_color='rgba(100, 100, 100, 0.8)'
+        ))
+
+    fig.update_layout(
+        barmode='stack',
+        title="Detailed Annual Cost Breakdown (MM$)",
+        xaxis_title="Year",
+        yaxis_title="Cost (MM$)",
+        legend_title="Cost Component",
+        template='plotly_white'
+    )
+    return fig

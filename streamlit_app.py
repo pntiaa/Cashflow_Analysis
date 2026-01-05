@@ -1,5 +1,5 @@
 import streamlit as st
-from utils import ensure_state_init, render_project_sidebar
+from utils import ensure_state_init, render_project_sidebar, get_all_projects_summary
 
 # --- Page Configuration ---
 st.set_page_config(
@@ -29,6 +29,12 @@ Welcome to the **Cashflow Analysis App**. This tool allows you to perform end-to
 
 **Get started by selecting or creating a Project in the sidebar.**
 """)
+
+st.divider()
+
+st.subheader("📊 Project Portfolio Summary")
+summary_df = get_all_projects_summary()
+st.dataframe(summary_df, width='stretch', hide_index=True)
 
 with st.sidebar:
     st.divider()

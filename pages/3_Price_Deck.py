@@ -20,6 +20,82 @@ if "price_deck_oil" not in st.session_state:
 if "price_deck_gas" not in st.session_state:
     st.session_state.price_deck_gas = {y: 8.0 for y in range(2025, 2076)}
 
+# --- Top-Level Case Management ---
+st.divider()
+st.subheader("📁 Case Management")
+col_c1, col_c2, col_c3 = st.columns([2, 2, 1])
+
+with col_c1:
+    # Load Case
+    existing_cases = list(st.session_state.price_cases.keys())
+    cases_options = ["Select a case..."] + existing_cases
+    selected_case = st.selectbox("Load Saved Case", options=cases_options, key="price_load_case_selector")
+
+    if selected_case != "Select a case...":
+        if st.button("📂 Load Selected Case"):
+            case_data = st.session_state.price_cases[selected_case]
+            
+            # 1. Restore Prices
+            if "oil" in case_data:
+                st.session_state.price_deck_oil = {int(k): v for k, v in case_data["oil"].items()}
+            if "gas" in case_data:
+                st.session_state.price_deck_gas = {int(k): v for k, v in case_data["gas"].items()}
+                
+            # 2. Restore Input Parameters
+            if "input_params" in case_data:
+                params = case_data["input_params"]
+                st.session_state.m_start = params.get("m_start", 2025)
+                st.session_state.m_end = params.get("m_end", 2035)
+                st.session_state.m_policy = params.get("m_policy", "Same as end year price")
+                st.session_state.m_inf = params.get("m_inf", 2.0)
+                
+                st.session_state.a_start = params.get("a_start", 2025)
+                st.session_state.a_end = params.get("a_end", 2075)
+                st.session_state.a_oil_init = params.get("a_oil_init", 70.0)
+                st.session_state.a_gas_init = params.get("a_gas_init", 8.0)
+                st.session_state.a_inf_pct = params.get("a_inf_pct", 1.5)
+                st.session_state.cap_2x = params.get("cap_2x", True)
+
+            st.success(f"Price Case '{selected_case}' loaded!")
+            st.rerun()
+
+with col_c2:
+    # Save Case
+    new_case_name = st.text_input("New Case Name", value="Base Price", key="new_price_case_name")
+    if st.button("💾 Save Current Case"):
+        if not st.session_state.current_project:
+            st.error("⚠️ No active project! Please create or select a project in the Sidebar first.")
+        else:
+            # Collect Input Params
+            input_params = {
+                "m_start": st.session_state.get("m_start"),
+                "m_end": st.session_state.get("m_end"),
+                "m_policy": st.session_state.get("m_policy"),
+                "m_inf": st.session_state.get("m_inf"),
+                
+                "a_start": st.session_state.get("a_start"),
+                "a_end": st.session_state.get("a_end"),
+                "a_oil_init": st.session_state.get("a_oil_init"),
+                "a_gas_init": st.session_state.get("a_gas_init"),
+                "a_inf_pct": st.session_state.get("a_inf_pct"),
+                "cap_2x": st.session_state.get("cap_2x"),
+            }
+            
+            price_case = {
+                "oil": st.session_state.price_deck_oil,
+                "gas": st.session_state.price_deck_gas,
+                "input_params": input_params, # New: Save inputs
+                "params": {
+                    "source": "Manual/Auto Enhanced",
+                    "timestamp": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M")
+                }
+            }
+            st.session_state.price_cases[new_case_name] = price_case
+            save_project(st.session_state.current_project)
+            st.success(f"Price scenario '{new_case_name}' saved to project '{st.session_state.current_project}'!")
+
+st.divider()
+
 # --- 1. Manual Input Section ---
 st.header("1. Manual Price Input")
 with st.expander("🛠️ Manual Price Configuration", expanded=False):
@@ -47,7 +123,7 @@ with st.expander("🛠️ Manual Price Configuration", expanded=False):
         st.session_state.df_manual_edit = pd.DataFrame(init_data).set_index("Year").T
     
     if "df_manual_edit" in st.session_state:
-        edited_df = st.data_editor(st.session_state.df_manual_edit, use_container_width=True)
+        edited_df = st.data_editor(st.session_state.df_manual_edit, width='stretch')
         
         if st.button("🚀 Apply Manual Forecast", type="primary"):
             # Update the range from the table
@@ -93,7 +169,7 @@ with st.expander("🪄 Auto Generation Parameters", expanded=True):
         a_gas_init = st.number_input("Initial Gas Price ($/mcf)", value=8.0, key="a_gas_init")
     with col_a3:
         a_inflation = st.number_input("Inflation Rate (%)", value=1.5, step=0.1, key="a_inf_pct") / 100.0
-        cap_2x = st.checkbox("Stop increasing at 2x initial price", value=True)
+        cap_2x = st.checkbox("Stop increasing at 2x initial price", value=True, key="cap_2x")
 
     if st.button("⚡ Generate & Apply Prices", type="primary"):
         temp_oil = {}
@@ -135,31 +211,8 @@ with col_v1:
     
     fig = px.line(price_data, x='Year', y=['Oil Price ($/bbl)', 'Gas Price ($/mcf)'],
                  title="Commodity Price Deck", markers=False)
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
 with col_v2:
     st.subheader("Data Summary")
     st.dataframe(price_data, height=400)
-
-st.divider()
-st.subheader("📁 Case Management")
-case_name = st.text_input("Enter Price Scenario Name", value="Base Price")
-
-if st.button("💾 Save Price Scenario"):
-    if not st.session_state.current_project:
-        st.error("⚠️ No active project! Please create or select a project in the Sidebar first.")
-    else:
-        price_case = {
-            "oil": st.session_state.price_deck_oil,
-            "gas": st.session_state.price_deck_gas,
-            "params": {
-                "source": "Manual/Auto Enhanced",
-                "timestamp": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M")
-            }
-        }
-        st.session_state.price_cases[case_name] = price_case
-        save_project(st.session_state.current_project)
-        st.success(f"Price scenario '{case_name}' saved to project '{st.session_state.current_project}'!")
-
-if st.session_state.price_cases:
-    st.write("Saved Scenarios:", list(st.session_state.price_cases.keys()))

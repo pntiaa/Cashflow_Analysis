@@ -241,61 +241,73 @@ class DevelopmentCost:
              print(f"[subsea] subsea_per_well={subsea_per_well} -> subsea_costs: {self.subsea_costs}")
              return self.subsea_costs
 
-    def calculate_study_costs(self, timing: str = 'year_0', output=True) -> Dict[int, float]:
+    # -----------------------
+    # Helper for cost spreading
+    # -----------------------
+    def _calculate_spread_cost(self, item_key: str, default_timing: int = 0, default_duration: int = 1) -> Dict[int, float]:
         """
-        timing:
-          - 'year_0': all study costs in year_before_start (dev_start_year - 1)
-          - 'year_1': all in first development year (dev_start_year)
-          - 'spread': evenly across development years
+        Parses the cost item from self.case_param.
+        Expected formats in self.case_param[item_key]:
+          1. float: simple cost, uses default_timing (relative to dev_start_year) and default_duration.
+          2. dict/object with keys: 'cost', 'timing', 'duration'.
+        
+        Returns a dict {year: annual_cost}
+        """
+        val = self.case_param.get(item_key, 0.0)
+        
+        cost = 0.0
+        timing = default_timing
+        duration = default_duration
+        
+        if isinstance(val, (int, float)):
+            cost = float(val)
+        elif isinstance(val, dict):
+            cost = float(val.get('cost', 0.0))
+            timing = int(val.get('timing', default_timing))
+            duration = int(val.get('duration', default_duration))
+        
+        if cost == 0.0:
+            return {}
+            
+        start_year = self.dev_start_year + timing
+        duration = max(1, duration)
+        annual_cost = cost / duration
+        
+        result = {}
+        for i in range(duration):
+            y = start_year + i
+            result[y] = annual_cost
+        return result
+
+    def calculate_study_costs(self, base_offset: int = 0, base_duration: int = 0, output=True) -> Dict[int, float]:
+        """
+        Calculates study costs using item-specific timing if provided in dev_param.
+        Backward compatibility: if dev_param has floats, uses 'timing' arg defaults.
         """
         if not self.yearly_drilling_schedule:
             raise ValueError("Drilling schedule not set.")
 
-        feas = float(self.case_param.get('feasability_study', 0.0))
-        concept = float(self.case_param.get('concept_study_cost', 0.0))
-        feed = float(self.case_param.get('FEED_cost', 0.0))
-        eia = float(self.case_param.get('EIA_cost', 0.0))
+        # Calculate each component
+        # usage: _calculate_spread_cost(key, default_timing_offset, default_duration)
+        self.feasability_study_cost = self._calculate_spread_cost('feasability_study', base_offset, base_duration)
+        self.concept_study_cost = self._calculate_spread_cost('concept_study_cost', base_offset, base_duration)
+        self.FEED_cost = self._calculate_spread_cost('FEED_cost', base_offset, base_duration)
+        self.EIA_cost = self._calculate_spread_cost('EIA_cost', base_offset, base_duration)
 
-        # prepare years for study cost dict depending on timing
-        if timing == 'year_0':
-            study_years = [self.dev_start_year - 1] + self.cost_years
-        else:
-            study_years = self.cost_years.copy()
+        # Merge all years into cost_years
+        all_study_years = set()
+        all_study_years.update(self.feasability_study_cost.keys())
+        all_study_years.update(self.concept_study_cost.keys())
+        all_study_years.update(self.FEED_cost.keys())
+        all_study_years.update(self.EIA_cost.keys())
+        
+        # We need to ensure self.cost_years includes these new years
+        current_years = set(self.cost_years)
+        self.cost_years = sorted(list(current_years | all_study_years))
 
-        # initialize zero dicts for study components
-        self.feasability_study_cost = self._dict_zero_for_years(study_years)
-        self.concept_study_cost = self._dict_zero_for_years(study_years)
-        self.FEED_cost = self._dict_zero_for_years(study_years)
-        self.EIA_cost = self._dict_zero_for_years(study_years)
-
-        if timing == 'year_0':
-            self.feasability_study_cost[self.dev_start_year - 1] = feas
-            self.concept_study_cost[self.dev_start_year - 1] = concept
-            self.FEED_cost[self.dev_start_year - 1] = feed
-            self.EIA_cost[self.dev_start_year - 1] = eia
-        elif timing == 'year_1':
-            self.feasability_study_cost[self.dev_start_year] = feas
-            self.concept_study_cost[self.dev_start_year] = concept
-            self.FEED_cost[self.dev_start_year] = feed
-            self.EIA_cost[self.dev_start_year] = eia
-        elif timing == 'spread':
-            n = max(1, self.total_development_years)
-            per_feas = feas / n
-            per_concept = concept / n
-            per_feed = feed / n
-            per_eia = eia / n
-            for y in self.cost_years:
-                self.feasability_study_cost[y] = per_feas
-                self.concept_study_cost[y] = per_concept
-                self.FEED_cost[y] = per_feed
-                self.EIA_cost[y] = per_eia
-        else:
-            raise ValueError("Unknown timing for study_costs. Use 'year_0', 'year_1' or 'spread'.")
-
-        total = feas + concept + feed + eia
         if output:
-            print(f"[study] timing={timing}, total_study_cost={total} -> study : {self.feasability_study_cost}")
-            # print(f"[study] timing={timing}, total_study_cost={total} -> study dict keys: {list(self.feasability_study_cost.keys())}")
+            total_feas = sum(self.feasability_study_cost.values())
+            print(f"[study] Feasibility: {total_feas} (spread over {list(self.feasability_study_cost.keys())})")
             return {
                 'feasability': self.feasability_study_cost,
                 'concept': self.concept_study_cost,
@@ -303,44 +315,30 @@ class DevelopmentCost:
                 'EIA': self.EIA_cost
             }
 
-    def calculate_facility_costs(self, timing: str = 'year_1', output=True) -> Dict[str, Dict[int, float]]:
+    def calculate_facility_costs(self, base_offset: int = 0, base_duration: int = 0, output=True) -> Dict[str, Dict[int, float]]:
         """
-        timing: 'year_1' (all in first development year) or 'spread' (spread evenly across development years)
+        Calculates facility costs using item-specific timing.
         """
         if not self.yearly_drilling_schedule:
             raise ValueError("Drilling schedule not set.")
 
-        FPSO = float(self.case_param.get('FPSO_cost', 0.0))
-        pipeline = float(self.case_param.get('export_pipeline_cost', 0.0))
-        terminal = float(self.case_param.get('terminal_cost', 0.0))
-        pm = float(self.case_param.get('PM_others_cost', 0.0))
+        self.FPSO_cost = self._calculate_spread_cost('FPSO_cost', base_offset, base_duration)
+        self.export_pipeline_cost = self._calculate_spread_cost('export_pipeline_cost', base_offset, base_duration)
+        self.terminal_cost = self._calculate_spread_cost('terminal_cost', base_offset, base_duration)
+        self.PM_others_cost = self._calculate_spread_cost('PM_others_cost', base_offset, base_duration)
 
-        if timing == 'year_1':
-            self.FPSO_cost = self._dict_zero_for_years(self.cost_years)
-            self.export_pipeline_cost = self._dict_zero_for_years(self.cost_years)
-            self.terminal_cost = self._dict_zero_for_years(self.cost_years)
-            self.PM_others_cost = self._dict_zero_for_years(self.cost_years)
-
-            first = self.dev_start_year
-            self.FPSO_cost[first] = FPSO
-            self.export_pipeline_cost[first] = pipeline
-            self.terminal_cost[first] = terminal
-            self.PM_others_cost[first] = pm
-        elif timing == 'spread':
-            n = max(1, self.total_development_years)
-            per_f = FPSO / n
-            per_p = pipeline / n
-            per_t = terminal / n
-            per_m = pm / n
-            self.FPSO_cost = {y: per_f for y in self.cost_years}
-            self.export_pipeline_cost = {y: per_p for y in self.cost_years}
-            self.terminal_cost = {y: per_t for y in self.cost_years}
-            self.PM_others_cost = {y: per_m for y in self.cost_years}
-        else:
-            raise ValueError("Unknown timing for facility_costs. Use 'year_1' or 'spread'.")
+        # Merge years
+        all_fac_years = set()
+        all_fac_years.update(self.FPSO_cost.keys())
+        all_fac_years.update(self.export_pipeline_cost.keys())
+        all_fac_years.update(self.terminal_cost.keys())
+        all_fac_years.update(self.PM_others_cost.keys())
+        
+        current_years = set(self.cost_years)
+        self.cost_years = sorted(list(current_years | all_fac_years))
 
         if output:
-            print(f"[facility] timing={timing}. FPSO:{FPSO}, pipeline:{pipeline}, terminal:{terminal}, PM:{pm}")
+            print(f"[facility] FPSO: {sum(self.FPSO_cost.values())} (spread over {list(self.FPSO_cost.keys())})")
             return {
                 'FPSO': self.FPSO_cost,
                 'export_pipeline': self.export_pipeline_cost,
@@ -388,7 +386,7 @@ class DevelopmentCost:
             print(f"[opex] OPEX_per_bcf={opex_per_bcf:,.2f}, [opex] OPEX_fixed ={opex_fixed:,.2f}. annual_opex keys: {list(self.annual_opex.keys())}")
             return self.annual_opex
 
-    def calculate_annual_abex(self, study_timing: str = 'year_0', output=True) -> Dict[int, float]:
+    def calculate_annual_abex(self, output=True) -> Dict[int, float]:
         """
         Simple ABEX handling: total ABEX (per well + FPSO/subsea/pipeline) is booked in the last year
         of the whole timeline (development + production).
@@ -415,10 +413,7 @@ class DevelopmentCost:
 
         # construct year keys (include possible year_0)
         dev_years = self.cost_years.copy()
-        if study_timing == 'year_0':
-            years = [self.dev_start_year - 1] + dev_years
-        else:
-            years = dev_years.copy()
+        years = dev_years.copy()
 
         # The ABEX should be booked in the last year of the entire project, which is derived from the maximum of
         # all development years and all production years.
@@ -469,15 +464,12 @@ class DevelopmentCost:
         # CAPEX components
         self.calculate_drilling_costs(output=output)
         self.calculate_subsea_costs(output=output)
-        self.calculate_study_costs(timing=study_timing, output=output)
-        self.calculate_facility_costs(timing=facility_timing, output=output)
+        self.calculate_study_costs(output=output)
+        self.calculate_facility_costs(output=output)
 
         # Build annual CAPEX dict (years depend on study_timing)
         dev_years = self.cost_years.copy()
-        if study_timing == 'year_0':
-            years = [self.dev_start_year - 1] + dev_years
-        else:
-            years = dev_years.copy()
+        years = dev_years.copy()
 
         # Ensure all component dicts have the same keys (fill zeros where missing)
         def ensure_keys(d: Dict[int, float], keys: List[int]) -> Dict[int, float]:
@@ -501,8 +493,8 @@ class DevelopmentCost:
         self.total_capex = self._sum_dict_values(self.annual_capex)
 
         # OPEX and ABEX
-        self.calculate_annual_opex(study_timing=study_timing, output=output)
-        self.calculate_annual_abex(study_timing=study_timing, output=output)
+        self.calculate_annual_opex(output=output)
+        self.calculate_annual_abex(output=output)
 
         # Build total_annual_costs for full timeline (development + production)
         # This should now include all years from self.annual_opex and self.annual_abex
