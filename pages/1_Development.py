@@ -11,7 +11,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from utils import ensure_state_init, save_project, render_project_sidebar
-from plotting import plot_dev_cost_profile, plot_detailed_cost_breakdown
+from plotting import plot_dev_cost_profile, plot_detailed_cost_breakdown, plot_df_profile
 
 st.set_page_config(page_title="Development & Production", layout="wide")
 
@@ -60,7 +60,7 @@ with col_c1:
                 st.session_state.sunk_cost_input = params.get("sunk_cost_input", 0.0)
                 st.session_state.exp_start_year_input = params.get("exp_start_year_input", 2024)
                 st.session_state.dev_start_year_input = params.get("dev_start_year_input", 2026)
-                st.session_state.drill_start_year_input = params.get("drill_start_year_input", 2033)
+                st.session_state.drill_start_year_input = params.get("drill_start_year_input", 2030)
                 st.session_state.dev_case_input = params.get("dev_case_input", "FPSO_case")
                 
                 # Cost params (Simple + Granular)
@@ -69,20 +69,18 @@ with col_c1:
                     st.session_state[key] = params.get(key, default)
 
                 safe_set("feas_study_input", 3.0)
-                safe_set("feas_study_t", -2)
-                safe_set("feas_study_d", 2)
+                safe_set("feas_study_t", 0)
+                safe_set("feas_study_d", 1)
                 
                 safe_set("concept_study_input", 3.0)
-                safe_set("concept_study_t", -2)
-                safe_set("concept_study_d", 2)
+                safe_set("concept_study_t", 0)
+                safe_set("concept_study_d", 1)
 
                 safe_set("feed_cost_input", 42.0)
                 safe_set("feed_cost_t", 0)
                 safe_set("feed_cost_d", 1)
 
                 safe_set("pm_others_input", 10.1)
-                safe_set("pm_others_t", 0)
-                safe_set("pm_others_d", 5)
 
                 safe_set("drilling_cost_input", 95.0)
                 
@@ -90,13 +88,13 @@ with col_c1:
                 
                 safe_set("fpso_cost_input", 1570.0)
                 safe_set("fpso_cost_t", 0)
-                safe_set("fpso_cost_d", 3)
+                safe_set("fpso_cost_d", 7)
 
                 safe_set("pipeline_cost_input", 244.0)
                 safe_set("pipeline_cost_t", 0)
-                safe_set("pipeline_cost_d", 2)
+                safe_set("pipeline_cost_d", 7)
 
-                safe_set("opex_per_bcf_input", 1.047)
+                safe_set("opex_per_bcf_input", 2.093)
                 safe_set("opex_fixed_input", 347.424)
                 safe_set("abex_per_well_input", 17.4)
                 safe_set("abex_fpso_input", 114.7)
@@ -163,8 +161,6 @@ with col_c2:
                 "feed_cost_d": st.session_state.get("feed_cost_d"),
 
                 "pm_others_input": st.session_state.get("pm_others_input"),
-                "pm_others_t": st.session_state.get("pm_others_t"),
-                "pm_others_d": st.session_state.get("pm_others_d"),
 
                 "drilling_cost_input": st.session_state.get("drilling_cost_input"),
                 "subsea_cost_input": st.session_state.get("subsea_cost_input"),
@@ -268,21 +264,21 @@ with st.expander("Production Setup", expanded=True):
                     gas_profile = profile.make_production_profile_yearly(peak_production_annual=max_prod_rate if max_prod_rate > 0 else None)
                     cgr = (oiip_mmbbl / giip_bcf) * 1000
                     oil_profile = {year: gas * cgr / 1000 for year, gas in gas_profile.items()}
-                    
+                    drilling_plan = {year: drilling_plan.get(year, 0) for year in range(1, int(prod_duration) + 1)}
                     st.session_state.prod_data = pd.DataFrame({
                         'Year': list(gas_profile.keys()),
                         'Gas Production (BCF/y)': list(gas_profile.values()),
-                        'Oil Production (MMbbl/y)': list(oil_profile.values())
+                        'Oil Production (MMbbl/y)': list(oil_profile.values()),
+                        'Drilled Wells': list(drilling_plan.values())
                     })
                     st.session_state.drilling_plan_results = drilling_plan
                     st.session_state.current_cgr = cgr
                     # st.success("Field Production Profile Generated!")
 
         if st.session_state.prod_data is not None:
-            st.plotly_chart(px.bar(st.session_state.prod_data, x='Year', y='Gas Production (BCF/y)', title="Annual Field Gas Production"), width='stretch')
+            # st.plotly_chart(px.bar(st.session_state.prod_data, x='Year', y='Gas Production (BCF/y)', title="Annual Field Gas Production"), width='stretch')
+            st.plotly_chart(plot_df_profile(st.session_state.prod_data), width='stretch')
             st.info(f"🔢 **Estimated Total Wells: {st.session_state.wells_to_drill}** (based on {giip_bcf:,.1f} BCF Reserves / {well_eur_bcf:,.1f} BCF Well EUR)")
-
-    st.markdown("---")
 
 st.subheader("🛠️ Development Cost Generation")
 with st.expander("Detailed Development Parameter Editor", expanded=True):
@@ -323,26 +319,24 @@ with st.expander("Detailed Development Parameter Editor", expanded=True):
         with st.container(horizontal=True, horizontal_alignment='left', vertical_alignment="bottom", gap="small"):
             feas_study = st.number_input("Feasibility Study", value=3.0, key="feas_study_input", width=100)
             feas_t = st.number_input("Timing", value=0, key="feas_study_t", help="Relative to Dev Start Year", width=60)
-            feas_d = st.number_input("Duration", min_value=1, value=2, key="feas_study_d", width=60)
+            feas_d = st.number_input("Duration", min_value=1, value=6, key="feas_study_d", width=60)
 
         # 2. Concept Study
         with st.container(horizontal=True, horizontal_alignment='left', vertical_alignment="bottom", gap="small"):
             concept_study = st.number_input("Concept Study", value=3.0, key="concept_study_input", width=100)
             concept_t = st.number_input("Timing", value=0, key="concept_study_t", help="Relative to Dev Start Year", width=60)
-            concept_d = st.number_input("Duration", min_value=1, value=2, key="concept_study_d", width=60)
+            concept_d = st.number_input("Duration", min_value=1, value=6, key="concept_study_d", width=60)
         
         # 3. FEED Cost
         with st.container(horizontal=True, horizontal_alignment='left', vertical_alignment="bottom", gap="small"):
             feed_val = 42.0 if dev_case == "FPSO_case" else 3.0
             feed_cost = st.number_input("FEED Cost", value=feed_val, key="feed_cost_input", width=100)
             feed_t = st.number_input("Timing", value=0, key="feed_cost_t", help="Relative to Dev Start Year", width=60)
-            feed_d = st.number_input("Duration", min_value=1, value=4, key="feed_cost_d", width=60)
+            feed_d = st.number_input("Duration", min_value=1, value=6, key="feed_cost_d", width=60)
 
         # 4. PM & Others
         with st.container(horizontal=True, horizontal_alignment='left', vertical_alignment="bottom", gap="small"):
-            pm_others = st.number_input("PM & Others", value=10.1, key="pm_others_input", width=100)
-            pm_t = st.number_input("Timing", value=0, key="pm_others_t", help="Relative to Dev Start Year", width=60)
-            pm_d = st.number_input("Duration", min_value=1, value=5, key="pm_others_d", width=60)
+            pm_others = st.number_input("PM & Others (per Well)", value=10.1, key="pm_others_input", width=160)
 
     st.markdown("---")
 
@@ -352,29 +346,36 @@ with st.expander("Detailed Development Parameter Editor", expanded=True):
         st.text("🏗️ Facility CAPEX", width=200)
 
         with st.container(horizontal=True, width='content', horizontal_alignment='left', vertical_alignment="bottom", gap="small"):
-            st.text("Drilling Cost", width='content')
+            st.text("Drilling", width='content')
             drilling_cost = st.number_input("Drilling Cost per Well", value=95.0, key="drilling_cost_input", help="Driven by drilling schedule", width=160)
             subsea_cost = st.number_input("Subsea Cost per Well", value=41.1, key="subsea_cost_input", help="Driven by drilling schedule", width=160)
 
         with st.container(horizontal=True, width='content', horizontal_alignment='left', vertical_alignment="bottom", gap="small"):
-            st.text("FPSO Cost", width='content')
+            st.text("FPSO", width='content')
             fpso_val = 1570.0 if dev_case == "FPSO_case" else 0.0
             fpso_cost = st.number_input("FPSO / Facility Cost", value=fpso_val, key="fpso_cost_input", width=160)
             fpso_t = st.number_input("Timing (FPSO)", value=0, key="fpso_cost_t", width=100)
-            fpso_d = st.number_input("Duration (FPSO)", min_value=1, value=3, key="fpso_cost_d", width=100)
+            fpso_d = st.number_input("Duration (FPSO)", min_value=1, value=7, key="fpso_cost_d", width=100)
         
         with st.container(horizontal=True, width='content', horizontal_alignment='left', vertical_alignment="bottom", gap="small"):
-            st.text("Pipeline Cost", width='content')
+            st.text("Pipeline", width='content')
             pipeline_val = 244.0 if dev_case == "FPSO_case" else 0.0
             pipeline_cost = st.number_input("Export Pipeline Cost", value=pipeline_val, key="pipeline_cost_input", width=160)
             pipe_t = st.number_input("Timing (Pipe)", value=0, key="pipeline_cost_t", width=100)
-            pipe_d = st.number_input("Duration (Pipe)", min_value=1, value=2, key="pipeline_cost_d", width=100)
+            pipe_d = st.number_input("Duration (Pipe)", min_value=1, value=7, key="pipeline_cost_d", width=100)
+
+        with st.container(horizontal=True, width='content', horizontal_alignment='left', vertical_alignment="bottom", gap="small"):
+            st.text("Terminal", width='content')
+            terminal_val = 51.0 if dev_case == "FPSO_case" else 0.0
+            terminal_cost = st.number_input("Terminal Cost", value=terminal_val, key="terminal_cost_input", width=160)
+            terminal_t = st.number_input("Timing (Terminal)", value=4, key="terminal_cost_t", width=100)
+            terminal_d = st.number_input("Duration (Terminal)", min_value=1, value=3, key="terminal_cost_d", width=100)
 
     st.markdown("---")
 
     with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
         st.text("💸 OPEX & ABEX", width=200)
-        opex_per_bcf = st.number_input("OPEX per BCF", value=1.047, format="%.3f", key="opex_per_bcf_input", width=160)
+        opex_per_bcf = st.number_input("OPEX per BCF", value=2.093, format="%.3f", key="opex_per_bcf_input", width=160)
         opex_fixed = st.number_input("OPEX Fixed (k$/y)", value=347.424, key="opex_fixed_input", width=160)
         abex_per_well = st.number_input("ABEX per Well", value=17.4, key="abex_per_well_input", width=160)
         abex_fpso = st.number_input("ABEX FPSO", value=114.7 if dev_case == "FPSO_case" else 90.0, key="abex_fpso_input", width=160)
@@ -388,13 +389,13 @@ dev_param = {dev_case: {
     'feasability_study': {'cost': feas_study, 'timing': feas_t, 'duration': feas_d},
     'concept_study_cost': {'cost': concept_study, 'timing': concept_t, 'duration': concept_d},
     'FEED_cost': {'cost': feed_cost, 'timing': feed_t, 'duration': feed_d},
-    'PM_others_cost': {'cost': pm_others, 'timing': pm_t, 'duration': pm_d},
+    'PM_others_cost': pm_others,
     'EIA_cost': {'cost': 0.0, 'timing': 0, 'duration': 1}, # Hidden/Default for now
 
     # Facility items
     'FPSO_cost': {'cost': fpso_cost, 'timing': fpso_t, 'duration': fpso_d},
     'export_pipeline_cost': {'cost': pipeline_cost, 'timing': pipe_t, 'duration': pipe_d},
-    'terminal_cost': {'cost': 0.0, 'timing': 0, 'duration': 1}, # Hidden/Default
+    'terminal_cost': {'cost': terminal_cost, 'timing': terminal_t, 'duration': terminal_d}, # Hidden/Default
 
     'OPEX_per_bcf': opex_per_bcf, 'OPEX_fixed': opex_fixed,
     'ABEX_per_well': abex_per_well, 'ABEX_FPSO': abex_fpso,

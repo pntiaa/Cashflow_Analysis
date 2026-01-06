@@ -26,8 +26,35 @@ def plot_production_profile(cf, show: bool = True):
     fig.update_layout(title='Production Profile', xaxis_title='Year', yaxis_title='Production (MM barrels)')
     return fig
 
+def plot_df_profile(df):
+    fig_p = make_subplots(specs=[[{"secondary_y": True}]])
+    
+    fig_p.add_trace(
+        go.Bar(x=df['Year'], y=df['Gas Production (BCF/y)'], name='Gas (BCF)'),
+        secondary_y=False,
+    )
+    fig_p.add_trace(
+        go.Bar(x=df['Year'], y=df['Oil Production (MMbbl/y)'], name='Oil/Cond. (MMbbl)'),
+        secondary_y=False,
+    )
+    fig_p.add_trace(
+        go.Scatter(x=df['Year'], y=df['Drilled Wells'], name='Drilled Wells', mode='lines+markers'),
+        secondary_y=True,
+    )
+    fig_p.update_yaxes(secondary_y=True)
+    fig_p.update_layout(
+        title="Annual Production Profile",
+        xaxis_title="Year",
+        legend_title="Product"
+    )
+    
+    fig_p.update_yaxes(title_text="Volume", secondary_y=False)
+    fig_p.update_yaxes(title_text="Drilled Wells", range=[0, 20], secondary_y=True, showgrid=False)
+
+    return fig_p
+    
 # DevelopmentCost class plotting functions
-def plot_dev_prod_profile(dev):    
+def plot_dev_prod_profile(dev):     
     p_years = sorted(dev.production_years)
     gas_vals = [dev.annual_gas_production.get(y, 0.0) for y in p_years]
     oil_vals = [dev.annual_oil_production.get(y, 0.0) for y in p_years]
@@ -64,7 +91,7 @@ def plot_dev_cost_profile(dev):
         title=f"Annual Expenditure Forecast (MM$)",
         xaxis_title="Year",
         yaxis_title="MM$",
-        legend_title="Cost Category"
+        legend_title="Cost Category",
     )
     return fig
     

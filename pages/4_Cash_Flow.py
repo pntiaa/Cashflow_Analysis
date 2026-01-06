@@ -77,7 +77,7 @@ with st.expander("⚙️ Global Economic Parameters"):
         discount_rate = st.number_input("Discount Rate (fraction)", value=0.10, format="%.2f")
     with col_e2:
         exchange_rate = st.number_input("Exchange Rate (KRW/USD)", value=1350.0)
-        cost_inflation = st.number_input("Cost Inflation Rate", value=0.015)
+        cost_inflation = st.number_input("Cost Inflation Rate", value=0.0125, format="%0.4f")
     with col_e3:
         depreciation_method = st.selectbox("Depreciation Method", ["Unit of Production", "Straight Line", "Declining Balance"], index=0)
         useful_life = st.number_input("Useful Life (Depreciation)", value=10)
@@ -163,7 +163,7 @@ if st.session_state.get('last_cf_result'):
     st.subheader("📊 Economic Summary")
     summ = cf.get_project_summary()
     
-    col_r1, col_r2 = st.columns([1, 2])
+    col_r1, col_r2, col_r3 = st.columns([1, 1, 3])
     
     # Key Metrics Table
     with col_r1:
@@ -171,12 +171,16 @@ if st.session_state.get('last_cf_result'):
         st.metric("NPV (Discounted)", f"{summ['npv']:,.0f} MM$")
         st.metric("IRR", f"{summ['irr']*100:.1f}%" if isinstance(summ['irr'], (int, float)) else "N/A")
         st.metric("Payback Year", f"{summ['payback_year']}" if summ['payback_year'] else "N/A")
+    with col_r2:
         st.metric("Total Revenue", f"{summ['total_revenue']:,.0f} MM$")
         st.metric("Total CAPEX", f"{summ['total_capex']:,.0f} MM$")
+        st.metric("Total OPEX", f"{summ['total_opex']:,.0f} MM$")
+        st.metric("Total Royalty", f"{summ['total_royalty']:,.0f} MM$")
+        st.metric("Total Tax", f"{summ['total_tax']:,.0f} MM$")
         st.metric("Net Cash Flow (Total)", f"{summ['final_cumulative']:,.0f} MM$")
 
     # Plot Cash Flow Chart
-    with col_r2:
+    with col_r3:
         st.markdown("### Cash Flow Distribution")
         st.plotly_chart(plot_cf_waterfall_chart(cf), width='content')
 
@@ -205,14 +209,20 @@ if st.session_state.get('last_cf_result'):
             'Oil Production': [cf.annual_oil_production.get(y,0.0) for y in years],
             'Gas Production': [cf.annual_gas_production.get(y,0.0) for y in years],
             'Revenue': [cf.annual_revenue.get(y,0.0) for y in years],
+            'R-factor': [cf.annual_r_factor.get(y,0.0) for y in years],
             'Royalty': [cf.annual_royalty.get(y,0.0) for y in years],
             'CAPEX_inflated': [cf.annual_capex_inflated.get(y,0.0) for y in years],
             'OPEX_inflated': [cf.annual_opex_inflated.get(y,0.0) for y in years],
             'ABEX_inflated': [cf.annual_abex_inflated.get(y,0.0) for y in years],
-            'Tax': [cf.annual_total_tax.get(y,0.0) for y in years],
-            'Others': [cf.other_fees.get(y,0.0) for y in years],
+            'Cum_CAPEX': [cf.annual_cum_capex_inflated.get(y,0.0) for y in years],
+            'Cum_OPEX': [cf.annual_cum_opex_inflated.get(y,0.0) for y in years],
+            'Cum_ABEX': [cf.annual_cum_abex_inflated.get(y,0.0) for y in years],
+            'Taxable_income': [cf.taxable_income.get(y,0.0) for y in years],
+            'Loss_carryforward': [cf.loss_carryforward.get(y,0.0) for y in years],
+            'Income_Tax': [cf.annual_total_tax.get(y,0.0) for y in years],
+            'Other_fees': [cf.other_fees.get(y,0.0) for y in years],
             'NCF': [cf.annual_net_cash_flow.get(y,0.0) for y in years],
-            'Cum CF': [cf.cumulative_cash_flow.get(y,0.0) for y in years],
+            'Cum_CF': [cf.cumulative_cash_flow.get(y,0.0) for y in years],
         })
         st.dataframe(detail_df.style.format("{:.2f}"))
     

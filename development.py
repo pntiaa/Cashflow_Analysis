@@ -325,7 +325,9 @@ class DevelopmentCost:
         self.FPSO_cost = self._calculate_spread_cost('FPSO_cost', base_offset, base_duration)
         self.export_pipeline_cost = self._calculate_spread_cost('export_pipeline_cost', base_offset, base_duration)
         self.terminal_cost = self._calculate_spread_cost('terminal_cost', base_offset, base_duration)
-        self.PM_others_cost = self._calculate_spread_cost('PM_others_cost', base_offset, base_duration)
+        # PM & others 비용은 시추공당 비용으로 계산됨
+        pm_cost = float(self.case_param.get('PM_others_cost', 0.0))
+        self.PM_others_costs = {y: int(self.yearly_drilling_schedule.get(y, 0)) * pm_cost for y in self.cost_years}
 
         # Merge years
         all_fac_years = set()
@@ -391,6 +393,8 @@ class DevelopmentCost:
         Simple ABEX handling: total ABEX (per well + FPSO/subsea/pipeline) is booked in the last year
         of the whole timeline (development + production).
         """
+
+        ## 다시 계산해야함. 신규 법령에 따른 ABEX 재계산 필요
         if not self.yearly_drilling_schedule:
             raise ValueError("Drilling schedule not set.")
         # Changed: _total_production_duration is now calculated in set_annual_production.
@@ -447,7 +451,7 @@ class DevelopmentCost:
     # -----------------------
     # Total costs
     # -----------------------
-    def calculate_total_costs(self, production_years: int = 30, study_timing: str = 'year_0', facility_timing: str = 'year_1', output=True) -> Dict[str, object]:
+    def calculate_total_costs(self, production_years: int = 30, output=True) -> Dict[str, object]:
         """
         Calculate everything and populate annual_capex, annual_opex, annual_abex, total_annual_costs, cumulative_costs.
         Returns a output dict with totals and the annual dicts.
@@ -467,9 +471,14 @@ class DevelopmentCost:
         self.calculate_study_costs(output=output)
         self.calculate_facility_costs(output=output)
 
-        # Build annual CAPEX dict (years depend on study_timing)
-        dev_years = self.cost_years.copy()
-        years = dev_years.copy()
+        # cost years update
+        years = set(self.cost_years)
+        years |= set(self.exploration_costs.keys())
+        years |= set(self.annual_gas_production.keys())
+        years |= set(self.annual_oil_production.keys())
+        years |= set(self.annual_capex.keys())
+        years |= set(self.annual_abex.keys())
+        self.cost_years = list(years)
 
         # Ensure all component dicts have the same keys (fill zeros where missing)
         def ensure_keys(d: Dict[int, float], keys: List[int]) -> Dict[int, float]:

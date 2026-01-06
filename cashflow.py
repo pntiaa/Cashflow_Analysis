@@ -62,6 +62,7 @@ class CashFlowKOR(BaseModel):
     annual_royalty: Dict[int, float] = Field(default_factory=dict)
 
     taxable_income: Dict[int, float] = Field(default_factory=dict)
+    loss_carryforward: Dict[int, float] = Field(default_factory=dict)
     corporate_income_tax: Dict[int, float] = Field(default_factory=dict)
     other_fees: Dict[int, float] = Field(default_factory=dict)  # 공유수면점사용료, 교육훈련비
     annual_total_tax: Dict[int, float] = Field(default_factory=dict)
@@ -319,8 +320,37 @@ class CashFlowKOR(BaseModel):
         self._build_full_timeline()
         if not self.annual_revenue: self.calculate_annual_revenue(output=False)
         if not self.annual_depreciation: self.calculate_depreciation(output=False)
+        
+        running_loss = 0.0
+        self.loss_carryforward = {}
+        
         for y in self.all_years:
-            taxable = self.annual_revenue.get(y, 0.0) - (self.annual_opex.get(y, 0.0) + self.annual_abex.get(y, 0.0)) - self.annual_depreciation.get(y, 0.0)
+            self.loss_carryforward[y] = running_loss
+            
+            # 기본 과세 표준 계산 (수익 - 비용 - 감가상각)
+            pre_tax_income = self.annual_revenue.get(y, 0.0)
+            - self.annual_opex.get(y, 0.0)
+            - self.annual_royalty.get(y, 0.0)
+            - self.annual_abex.get(y, 0.0)
+            - self.annual_depreciation.get(y, 0.0)
+            
+            taxable = 0.0
+            if pre_tax_income < 0:
+                # 손실 발생 시 이월 결손금 누적
+                running_loss += (-pre_tax_income)
+                taxable = 0.0
+            else:
+                # 이익 발생 시 이월 결손금 공제
+                if running_loss > 0:
+                    if pre_tax_income >= running_loss:
+                        taxable = pre_tax_income - running_loss
+                        running_loss = 0.0
+                    else:
+                        taxable = 0.0
+                        running_loss -= pre_tax_income
+                else:
+                    taxable = pre_tax_income
+
             corp_tax = self._calculate_CIT(taxable)
             self.taxable_income[y] = taxable
             self.corporate_income_tax[y] = corp_tax
