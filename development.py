@@ -111,14 +111,16 @@ class DevelopmentCost:
         - 개발 딕셔너리를 정렬하고 누락된 부분을 0으로 채워 `self.annual_capex/opex/abex`를 채움.
         """
         years = set(self.cost_years)
-        years |= set(self.oil_production_by_year.keys())
-        years |= set(self.gas_production_by_year.keys())
+        years |= set(self.exploration_costs.keys())
+        years |= set(self.annual_oil_production.keys())
+        years |= set(self.annual_gas_production.keys())
         years |= set(self.annual_capex.keys())
         years |= set(self.annual_opex.keys())
         years |= set(self.annual_abex.keys())
 
         if len(years) == 0:
             raise ValueError("연도를 찾을 수 없습니다 (개발 또는 생산)")
+        return years
 
     # -----------------------
     # Schedule setter
@@ -394,7 +396,6 @@ class DevelopmentCost:
         of the whole timeline (development + production).
         """
 
-        ## 다시 계산해야함. 신규 법령에 따른 ABEX 재계산 필요
         if not self.yearly_drilling_schedule:
             raise ValueError("Drilling schedule not set.")
         # Changed: _total_production_duration is now calculated in set_annual_production.
@@ -416,36 +417,48 @@ class DevelopmentCost:
         total_abex = abex_per_well * total_wells + abex_FPSO + abex_subsea + abex_onshore + abex_offshore
 
         # construct year keys (include possible year_0)
-        dev_years = self.cost_years.copy()
-        years = dev_years.copy()
+        # dev_years = self.cost_years.copy()
+        # years = dev_years.copy()
 
-        # The ABEX should be booked in the last year of the entire project, which is derived from the maximum of
-        # all development years and all production years.
-        all_project_years = sorted(list(set(years) | set(self.annual_gas_production.keys())))
-        if all_project_years:
-            actual_last_project_year = all_project_years[-1]
-        else:
-            # Fallback if no development or production years for some reason
-            actual_last_project_year = self.drill_start_year + total_project_duration_for_abex_calc - 1
+        ## 다시 계산해야함. 신규 법령에 따라 ABEX 재계산 필요
+        
+        
+        # # all development years and all production years.
+        # all_project_years = sorted(list(set(years) | set(self.annual_gas_production.keys())))
+        # if all_project_years:
+        #     actual_last_project_year = all_project_years[-1]
+        # else:
+        #     # Fallback if no development or production years for some reason
+        #     actual_last_project_year = self.drill_start_year + total_project_duration_for_abex_calc - 1
 
-        # Initialize annual_abex for all years up to actual_last_project_year
-        all_abex_years = sorted(list(set(all_project_years) | set(years)))
-        annual_abex = {y: 0.0 for y in all_abex_years}
-
-        annual_abex[actual_last_project_year] = total_abex
+        # # Initialize annual_abex for all years up to actual_last_project_year
+        # all_abex_years = sorted(list(set(all_project_years) | set(years)))
+        # annual_abex = {y: 0.0 for y in all_abex_years}
+        # annual_abex[actual_last_project_year] = total_abex
 
         # cost years update
-        years = set(self.cost_years)
-        years |= set(self.exploration_costs.keys())
-        years |= set(self.annual_gas_production.keys())
-        years |= set(self.annual_oil_production.keys())
-        years |= set(self.annual_capex.keys())
-        years |= set(self.annual_abex.keys())
+        years = self._build_full_timeline()
         self.cost_years = list(years)
 
-        self.annual_abex = dict(sorted(annual_abex.items()))
+        total_reserve = self.total_gas_production
+        remaining_reserve = self.total_gas_production
+        remaining_abex = total_abex
+        decomm_ratio = 0
+        yearly_abex = {}
+
+        for y in years:
+            gas_prod = self.annual_gas_production.get(y, 0.0)
+            prod_ratio = remaining_reserve / total_reserve
+            decomm_ratio = gas_prod / remaining_reserve
+            remaining_reserve -= gas_prod
+            if prod_ratio < 0.5:
+                yearly_abex[y] = decomm_ratio * remaining_abex
+                remaining_abex -= yearly_abex[y]
+        
+        self.annual_abex = {y:yearly_abex.get(y, 0.0) for y in years}
+
         if output:
-            print(f"[abex] total_abex={total_abex:,.2f} booked in year {actual_last_project_year}")
+            print(f"[abex] total_abex={total_abex:,.2f} booked in year {list(self.annual_abex.keys())}")
             return self.annual_abex
 
     # -----------------------
@@ -472,12 +485,7 @@ class DevelopmentCost:
         self.calculate_facility_costs(output=output)
 
         # cost years update
-        years = set(self.cost_years)
-        years |= set(self.exploration_costs.keys())
-        years |= set(self.annual_gas_production.keys())
-        years |= set(self.annual_oil_production.keys())
-        years |= set(self.annual_capex.keys())
-        years |= set(self.annual_abex.keys())
+        years = self._build_full_timeline()
         self.cost_years = list(years)
 
         # Ensure all component dicts have the same keys (fill zeros where missing)
@@ -570,12 +578,14 @@ class DevelopmentCost:
             'concept_study': ensure_keys(self.concept_study_cost, all_years),
             'FEED': ensure_keys(self.FEED_cost, all_years),
             'EIA': ensure_keys(self.EIA_cost, all_years),
+            'ABEX': ensure_keys(self.annual_abex, all_years)
         }
         
         return {
             'capex_breakdown': capex_breakdown,
             'annual_opex': self.annual_opex,
-            'annual_abex': self.annual_abex
+            'annual_abex': self.annual_abex,
+            'annual_capex': self.annual_capex
         }
 
 

@@ -26,19 +26,19 @@ def plot_production_profile(cf, show: bool = True):
     fig.update_layout(title='Production Profile', xaxis_title='Year', yaxis_title='Production (MM barrels)')
     return fig
 
-def plot_df_profile(df):
+def plot_df_profile(years, gas_production, oil_production, drilled_wells):
     fig_p = make_subplots(specs=[[{"secondary_y": True}]])
     
     fig_p.add_trace(
-        go.Bar(x=df['Year'], y=df['Gas Production (BCF/y)'], name='Gas (BCF)'),
+        go.Bar(x=years, y=gas_production, name='Gas (BCF)'),
         secondary_y=False,
     )
     fig_p.add_trace(
-        go.Bar(x=df['Year'], y=df['Oil Production (MMbbl/y)'], name='Oil/Cond. (MMbbl)'),
+        go.Bar(x=years, y=oil_production, name='Oil/Cond. (MMbbl)'),
         secondary_y=False,
     )
     fig_p.add_trace(
-        go.Scatter(x=df['Year'], y=df['Drilled Wells'], name='Drilled Wells', mode='lines+markers'),
+        go.Scatter(x=years, y=drilled_wells, name='Drilled Wells', mode='lines+markers'),
         secondary_y=True,
     )
     fig_p.update_yaxes(secondary_y=True)
@@ -88,7 +88,7 @@ def plot_dev_cost_profile(dev):
     
     fig.update_layout(
         barmode='stack',
-        title=f"Annual Expenditure Forecast (MM$)",
+        # title=f"Annual Expenditure Forecast (MM$)",
         xaxis_title="Year",
         yaxis_title="MM$",
         legend_title="Cost Category",
@@ -677,7 +677,7 @@ def plot_detailed_cost_breakdown(dev):
 
     fig.update_layout(
         barmode='stack',
-        title="Detailed Annual Cost Breakdown (MM$)",
+        #title="Detailed Annual Cost Breakdown (MM$)",
         xaxis_title="Year",
         yaxis_title="Cost (MM$)",
         legend_title="Cost Component",

@@ -54,7 +54,7 @@ with col_c1:
                 st.session_state.giip_input = params.get("giip_input", 4980.0)
                 st.session_state.oiip_input = params.get("oiip_input", 329.0)
                 st.session_state.drilling_rate_input = params.get("drilling_rate_input", 12)
-                st.session_state.max_rate_input = params.get("max_rate_input", 250000)
+                st.session_state.max_rate_input = params.get("max_rate_input", 483000)
                 
                 # Development params
                 st.session_state.sunk_cost_input = params.get("sunk_cost_input", 0.0)
@@ -240,6 +240,20 @@ with st.expander("Production Setup", expanded=True):
                 st.success("Type Curve Generated!")
 
         if st.session_state.tc_data is not None:
+            if st.session_state.tc_data is None:
+                profile = YearlyProductionProfile(production_duration=int(tc_duration))
+                profile.generate_type_curve_from_exponential(
+                    qi_mmcfd=qi_mmcfd,
+                    EUR_target_mmcf=well_eur_bcf * 1000,
+                    T_years=int(tc_duration)
+                )
+                st.session_state.profile = profile
+                st.session_state.tc_data = pd.DataFrame({
+                    'Year': range(1, len(profile.yearly_type_rate) + 1),
+                    'Annual Rate (MMcf/y)': profile.yearly_type_rate,
+                    'Cumulative Production (MMcf)': profile.yearly_type_cum
+                })
+                st.success("Type Curve Generated!")
             tc_df = st.session_state.tc_data
             st.plotly_chart(px.line(tc_df, x='Year', y='Annual Rate (MMcf/y)', title="Annual Rate vs. Years"), width='stretch')
 
@@ -277,7 +291,11 @@ with st.expander("Production Setup", expanded=True):
 
         if st.session_state.prod_data is not None:
             # st.plotly_chart(px.bar(st.session_state.prod_data, x='Year', y='Gas Production (BCF/y)', title="Annual Field Gas Production"), width='stretch')
-            st.plotly_chart(plot_df_profile(st.session_state.prod_data), width='stretch')
+            years = st.session_state.prod_data['Year']
+            gas_production = st.session_state.prod_data['Gas Production (BCF/y)']
+            oil_production = st.session_state.prod_data['Oil Production (MMbbl/y)']
+            drilled_wells = list(st.session_state.drilling_plan_results.values())
+            st.plotly_chart(plot_df_profile(years, gas_production, oil_production, drilled_wells), width='stretch')
             st.info(f"🔢 **Estimated Total Wells: {st.session_state.wells_to_drill}** (based on {giip_bcf:,.1f} BCF Reserves / {well_eur_bcf:,.1f} BCF Well EUR)")
 
 st.subheader("🛠️ Development Cost Generation")
@@ -376,7 +394,7 @@ with st.expander("Detailed Development Parameter Editor", expanded=True):
     with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
         st.text("💸 OPEX & ABEX", width=200)
         opex_per_bcf = st.number_input("OPEX per BCF", value=2.093, format="%.3f", key="opex_per_bcf_input", width=160)
-        opex_fixed = st.number_input("OPEX Fixed (k$/y)", value=347.424, key="opex_fixed_input", width=160)
+        opex_fixed = st.number_input("OPEX Fixed (MM$/y)", value=347.424, key="opex_fixed_input", width=160)
         abex_per_well = st.number_input("ABEX per Well", value=17.4, key="abex_per_well_input", width=160)
         abex_fpso = st.number_input("ABEX FPSO", value=114.7 if dev_case == "FPSO_case" else 90.0, key="abex_fpso_input", width=160)
 
@@ -426,10 +444,13 @@ if st.button("🔄 Apply Parameters & Calculate", width='content', type="primary
 
 if st.session_state.get('dev_results_ready'):
     dev = st.session_state.current_dev_obj
+    
+    st.markdown("### 📊 Development Cost Profile (MM$)")
     st.plotly_chart(plot_dev_cost_profile(dev))
+
+    st.markdown("### 📊 Detailed CAPEX Breakdown (MM$)")
     st.plotly_chart(plot_detailed_cost_breakdown(dev))
     
-    st.markdown("### 📊 Detailed CAPEX Breakdown (MM$)")
     breakdown = dev.get_cost_breakdown()
     capex_data = breakdown.get('capex_breakdown', {})
     
