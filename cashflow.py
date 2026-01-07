@@ -328,11 +328,7 @@ class CashFlowKOR(BaseModel):
             self.loss_carryforward[y] = running_loss
             
             # 기본 과세 표준 계산 (수익 - 비용 - 감가상각)
-            pre_tax_income = self.annual_revenue.get(y, 0.0)
-            - self.annual_opex.get(y, 0.0)
-            - self.annual_royalty.get(y, 0.0)
-            - self.annual_abex.get(y, 0.0)
-            - self.annual_depreciation.get(y, 0.0)
+            pre_tax_income = self.annual_revenue.get(y, 0.0) - self.annual_opex_inflated.get(y, 0.0) - self.annual_royalty.get(y, 0.0) - self.annual_abex_inflated.get(y, 0.0) - self.annual_depreciation.get(y, 0.0)
             
             taxable = 0.0
             if pre_tax_income < 0:
