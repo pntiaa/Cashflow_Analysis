@@ -232,7 +232,7 @@ class CashFlowKOR(BaseModel):
     # ---------------------------
     # 감가상각
     # ---------------------------
-    def calculate_depreciation(self, method: str = 'production_base', useful_life: int = 10, depreciable_components: Optional[List[str]] = None, output=True):
+    def calculate_depreciation(self, method: str = 'unit_of_production', useful_life: int = 10, depreciable_components: Optional[List[str]] = None, output=True):
         if self.development_cost is None:
             raise ValueError("개발 비용을 먼저 설정하십시오")
 
@@ -259,7 +259,7 @@ class CashFlowKOR(BaseModel):
         self.annual_depreciation = {y: 0.0 for y in years}
         remaining_reserve = self.total_gas_production
 
-        if method == 'production_base':
+        if method == 'unit_of_production':
             total_depr_amount = 0.0
             for y in years:
                 gas_prod = self.annual_gas_production.get(y, 0.0)
@@ -322,13 +322,25 @@ class CashFlowKOR(BaseModel):
         if not self.annual_depreciation: self.calculate_depreciation(output=False)
         
         running_loss = 0.0
+        if self.cop_year is None: 
+            self.determine_cop_year()
+        cop_year = self.cop_year
+
         self.loss_carryforward = {}
-        
+
         for y in self.all_years:
-            self.loss_carryforward[y] = running_loss
+
+            # cop 연도 이후의 세금은 0 처리
+            if y > cop_year:
+                self.taxable_income[y] = 0.0
+                self.corporate_income_tax[y] = 0.0
+                self.annual_total_tax[y] = 0.0
+                continue
             
+            self.loss_carryforward[y] = running_loss
+
             # 기본 과세 표준 계산 (수익 - 비용 - 감가상각)
-            pre_tax_income = self.annual_revenue.get(y, 0.0) - self.annual_opex_inflated.get(y, 0.0) - self.annual_royalty.get(y, 0.0) - self.annual_abex_inflated.get(y, 0.0) - self.annual_depreciation.get(y, 0.0)
+            pre_tax_income = self.annual_revenue.get(y, 0.0) - self.annual_opex.get(y, 0.0) - self.annual_royalty.get(y, 0.0) - self.annual_abex.get(y, 0.0) - self.annual_depreciation.get(y, 0.0)
             
             taxable = 0.0
             if pre_tax_income < 0:
@@ -375,31 +387,51 @@ class CashFlowKOR(BaseModel):
         self.annual_r_factor = annual_r_factor
         self.annual_royalty = annual_royalty
 
-    def calculate_net_cash_flow(self, cop=True, output=True, discovery_bonus: Optional[float] = None):
+    def determine_cop_year(self):
+        """COP 연도를 미리 결정"""
+        self._build_full_timeline()
+        if not self.annual_revenue:
+            self.calculate_annual_revenue(output=False)
+        
+        cop_year = self.all_years[-1]
+        
+        for y in self.all_years:
+            if y >= (self.production_start_year or 0):
+                revenue_y = self.annual_revenue.get(y, 0.0)
+                opex_y = self.annual_opex_inflated.get(y, 0.0)
+                
+                if revenue_y < opex_y and revenue_y >= 0:
+                    cop_year = y
+                    break
+        
+        self.cop_year = cop_year
+        return cop_year
+
+    def calculate_net_cash_flow(self, output=True, discovery_bonus: Optional[float] = None):
         self._build_full_timeline()
         if not self.annual_revenue: self.calculate_annual_revenue(output=False)
         if not self.annual_royalty: self.calculate_royalty()
         if not self.annual_total_tax: self.calculate_taxes(output=False)
         years = self.all_years
-        cop_year = years[-1]
-        if cop:
-            for y in years:
-                if y >= (self.production_start_year or 0):
-                    if self.annual_revenue.get(y, 0.0) > 0 and self.annual_revenue.get(y, 0.0) < self.annual_opex_inflated.get(y, 0.0):
-                        cop_year = y; break
-        self.cop_year = cop_year
+
+        cop_year = self.determine_cop_year()
+
+        # 현금흐름 계산
         self.annual_net_cash_flow = {}
         self.cumulative_cash_flow = {}
         cum_ncf = 0.0
         for y in years:
-            rev = self.annual_revenue.get(y, 0.0) if y <= cop_year else 0.0
-            royalty = self.annual_royalty.get(y, 0.0) if y <= cop_year else 0.0
+            before_or_at_cop = (y <= cop_year)
+
+            rev = self.annual_revenue.get(y, 0.0) if before_or_at_cop else 0.0
+            royalty = self.annual_royalty.get(y, 0.0) if before_or_at_cop else 0.0
             capex = self.annual_capex_inflated.get(y, 0.0)
-            opex = self.annual_opex_inflated.get(y, 0.0) if y <= cop_year else 0.0
+            opex = self.annual_opex_inflated.get(y, 0.0) if before_or_at_cop else 0.0
             abex = self.annual_abex_inflated.get(y, 0.0)
-            tax = self.annual_total_tax.get(y, 0.0)
-            other = self.other_fees.get(y, 0.0)
+            tax = self.annual_total_tax.get(y, 0.0) if before_or_at_cop else 0.0
+            other = self.other_fees.get(y, 0.0) if before_or_at_cop else 0.0
             bonus = (discovery_bonus if y == self.production_start_year else 0.0) if discovery_bonus else 0.0
+            
             ncf = rev - royalty - (capex + opex + abex + bonus + other) - tax
             self.annual_net_cash_flow[y] = ncf
             cum_ncf += ncf

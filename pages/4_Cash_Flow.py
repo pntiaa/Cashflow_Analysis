@@ -120,7 +120,8 @@ if run_button:
     
     # Run Full Cycle
     cf.calculate_annual_revenue(output=False)
-    cf.calculate_depreciation(method='straight_line', useful_life=useful_life, output=False)
+    cf.calculate_depreciation(method='unit_of_production', useful_life=useful_life, output=False)
+    cf.determine_cop_year()
     cf.calculate_royalty()
     cf.calculate_taxes(output=False)
     cf.calculate_net_cash_flow(output=False)
@@ -168,13 +169,15 @@ if st.session_state.get('last_cf_result'):
     # Key Metrics Table
     with col_r1:
         st.markdown("### Key Metrics")
-        st.metric("NPV (Discounted)", f"{summ['npv']:,.0f} MM$")
+        st.metric(f"NPV (@ {discount_rate*100:.1f}%)", f"{summ['npv']:,.0f} MM$")
         st.metric("IRR", f"{summ['irr']*100:.1f}%" if isinstance(summ['irr'], (int, float)) else "N/A")
         st.metric("Payback Year", f"{summ['payback_year']}" if summ['payback_year'] else "N/A")
+        st.metric("COP Year", f"{cf.cop_year}" if cf.cop_year else "N/A")
     with col_r2:
         st.metric("Total Revenue", f"{summ['total_revenue']:,.0f} MM$")
         st.metric("Total CAPEX", f"{summ['total_capex']:,.0f} MM$")
         st.metric("Total OPEX", f"{summ['total_opex']:,.0f} MM$")
+        st.metric("Total ABEX", f"{summ['total_abex']:,.0f} MM$")
         st.metric("Total Royalty", f"{summ['total_royalty']:,.0f} MM$")
         st.metric("Total Tax", f"{summ['total_tax']:,.0f} MM$")
         st.metric("Net Cash Flow (Total)", f"{summ['final_cumulative']:,.0f} MM$")
