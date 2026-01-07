@@ -119,13 +119,24 @@ if run_button:
     cf.set_production_profile_from_dicts(oil_dict=oil_shifted, gas_dict=gas_shifted)
     
     # Run Full Cycle
-    cf.calculate_annual_revenue(output=False)
+    # Step 1: 초기 수익 계산
+    cf.calculate_annual_revenue(output=False)    
+    # Step 2: COP 연도 결정
+    cf.determine_cop_year(output=False)
+    # Step 3: COP 기반 모든 조정 적용 ⭐
+    cop_adjustments = cf.apply_cop_adjustments(output=False)
+    # Step 4: 조정된 값으로 조광료 재계산
+    cf.calculate_royalty(output=False)
+    # Step 5: 감가상각 계산
     cf.calculate_depreciation(method='unit_of_production', useful_life=useful_life, output=False)
-    cf.determine_cop_year()
-    cf.calculate_royalty()
+    # Step 6: 조정된 값으로 세금 재계산
     cf.calculate_taxes(output=False)
+    # Step 7: 최종 현금흐름 계산
     cf.calculate_net_cash_flow(output=False)
+    # Step 8: NPV 계산
     cf.calculate_npv(output=False)
+
+    # st.success("✅ Cash flow calculation complete!")
     
     # Store result in session state
     st.session_state.last_cf_result = {
@@ -190,11 +201,14 @@ if st.session_state.get('last_cf_result'):
     st.divider()
     st.subheader("📈 Detailed Visualizations")
     
-    st.subheader("Cash Flow Profile")
-    st.plotly_chart(plot_cashflow(cf), width='stretch')
-    
-    st.subheader("Production Profile")
-    st.plotly_chart(plot_production_profile(cf), width='stretch')
+    col_plot1, col_plot2 = st.columns([1,1])
+
+    with col_plot1:
+        st.subheader("Cash Flow Profile")
+        st.plotly_chart(plot_cashflow(cf), width='stretch')
+    with col_plot2:
+        st.subheader("Production Profile")
+        st.plotly_chart(plot_production_profile(cf), width='stretch')
 
     st.subheader("Cost Profile")
     st.plotly_chart(plot_cost_profile(dev_obj), width='stretch')

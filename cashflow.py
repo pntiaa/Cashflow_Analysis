@@ -316,39 +316,289 @@ class CashFlowKOR(BaseModel):
         else: return 0.0
         return CIT_krw / self.exchange_rate * 10
 
-    def calculate_taxes(self, output=True):
+    def _calculate_royalty_rates(self, r_factor:float):
+        if r_factor < 1.25: return 0.01
+        elif r_factor < 3: return round(((18.28 * (r_factor-1.25)) + 1)/100,2)
+        else: return 0.33
+
+    def determine_cop_year(self, output=False):
+        """
+        COP 연도 결정: Revenue < OPEX 인 첫 번째 연도
+        """
         self._build_full_timeline()
-        if not self.annual_revenue: self.calculate_annual_revenue(output=False)
-        if not self.annual_depreciation: self.calculate_depreciation(output=False)
+        if not self.annual_revenue:
+            self.calculate_annual_revenue(output=False)
+        
+        cop_year = self.all_years[-1]  # 기본값: 마지막 연도
+        
+        for y in self.all_years:
+            if y >= (self.production_start_year or 0):
+                revenue_y = self.annual_revenue.get(y, 0.0)
+                opex_y = self.annual_opex_inflated.get(y, 0.0)
+                
+                # OPEX가 존재하고, 수익이 OPEX보다 작으면 생산 중단
+                if opex_y > 0 and revenue_y < opex_y:
+                    cop_year = y
+                    if output:
+                        print(f"[COP] Year {y}: Revenue ({revenue_y:.2f}) < OPEX ({opex_y:.2f})")
+                    break
+        
+        self.cop_year = cop_year
+        
+        if output:
+            print(f"[COP] Determined COP Year: {cop_year}")
+        
+        return cop_year
+    
+    def apply_cop_adjustments(self, output=False):
+        """
+        COP 이후의 모든 생산/비용/수익 조정을 한 번에 처리
+        이 함수 호출 후에는 조광료, 세금 등을 재계산해야 함
+        """
+        if self.cop_year is None:
+            raise ValueError("COP 연도를 먼저 결정해야 합니다 (determine_cop_year 호출)")
+        
+        cop_year = self.cop_year
+        years = self.all_years
+        
+        if output:
+            print(f"\n{'='*60}")
+            print(f"[COP Adjustments] Applying changes for COP Year: {cop_year}")
+            print(f"{'='*60}")
+        
+        # ===== 1. 생산량 조정 (COP 이후 0) =====
+        original_gas_production = sum(self.annual_gas_production.values())
+        original_oil_production = sum(self.annual_oil_production.values())
+        
+        for y in years:
+            if y > cop_year:
+                self.annual_gas_production[y] = 0.0
+                self.annual_oil_production[y] = 0.0
+        
+        actual_gas_production = sum(self.annual_gas_production.values())
+        actual_oil_production = sum(self.annual_oil_production.values())
+        
+        self.total_gas_production = actual_gas_production
+        self.total_oil_production = actual_oil_production
+        
+        if output:
+            print(f"\n[1. Production Adjustment]")
+            print(f"  Original Gas: {original_gas_production:.2f} BCF")
+            print(f"  Actual Gas (to COP): {actual_gas_production:.2f} BCF")
+            print(f"  Reduction: {original_gas_production - actual_gas_production:.2f} BCF")
+        
+        # ===== 2. 수익 재계산 (생산량 조정 반영) =====
+        for y in years:
+            oil_vol = self.annual_oil_production.get(y, 0.0)
+            gas_vol = self.annual_gas_production.get(y, 0.0)
+            oil_price = self.oil_price_by_year.get(y, 0.0)
+            gas_price = self.gas_price_by_year.get(y, 0.0)
+            
+            self.annual_revenue_oil[y] = oil_vol * oil_price
+            self.annual_revenue_gas[y] = gas_vol * gas_price
+            self.annual_revenue[y] = self.annual_revenue_oil[y] + self.annual_revenue_gas[y]
+        
+        # 누적 수익 재계산
+        cumulative_revenue = 0.0
+        for y in years:
+            cumulative_revenue += self.annual_revenue.get(y, 0.0)
+            self.annual_cum_revenue[y] = cumulative_revenue
+        
+        if output:
+            print(f"\n[2. Revenue Recalculation]")
+            print(f"  Total Revenue (adjusted): {sum(self.annual_revenue.values()):.2f} MM$")
+        
+        # ===== 3. OPEX 조정 (COP 이후 0) =====
+        for y in years:
+            if y > cop_year:
+                self.annual_opex[y] = 0.0
+                self.annual_opex_inflated[y] = 0.0
+        
+        # 누적 OPEX 재계산
+        cumulative_opex = 0.0
+        for y in years:
+            cumulative_opex += self.annual_opex_inflated.get(y, 0.0)
+            self.annual_cum_opex_inflated[y] = cumulative_opex
+        
+        if output:
+            print(f"\n[3. OPEX Adjustment]")
+            print(f"  Total OPEX (to COP): {sum(self.annual_opex_inflated.values()):.2f} MM$")
+        
+        # ===== 4. ABEX 조정 =====
+        original_total_abex = sum(self.annual_abex_inflated.values())
+        
+        # 매장량의 절반 이상 생산된 시점 찾기
+        cumulative_gas = 0.0
+        abex_start_year = None
+        half_reserve = original_gas_production / 2.0
+        
+        for y in sorted(years):
+            # 원래 생산 계획 기준으로 절반 시점 계산
+            if hasattr(self, '_original_gas_production'):
+                cumulative_gas += self._original_gas_production.get(y, 0.0)
+            else:
+                cumulative_gas += self.annual_gas_production.get(y, 0.0)
+            
+            if cumulative_gas >= half_reserve:
+                abex_start_year = y
+                break
+        
+        # ABEX 기간의 실제 생산량 계산
+        if abex_start_year and cop_year >= abex_start_year:
+            abex_period_production = {}
+            total_abex_period_production = 0.0
+            
+            for y in years:
+                if abex_start_year <= y <= cop_year:
+                    prod = self.annual_gas_production.get(y, 0.0)
+                    abex_period_production[y] = prod
+                    total_abex_period_production += prod
+            
+            # 실제 생산 비율에 따른 ABEX 조정
+            production_ratio = actual_gas_production / original_gas_production if original_gas_production > 0 else 1.0
+            adjusted_total_abex = original_total_abex * production_ratio
+            
+            # ABEX를 생산량 비율로 재분배
+            adjusted_annual_abex_inflated = {}
+            for y in years:
+                if y < abex_start_year:
+                    adjusted_annual_abex_inflated[y] = 0.0
+                elif y <= cop_year and total_abex_period_production > 0:
+                    prod_ratio = abex_period_production.get(y, 0.0) / total_abex_period_production
+                    adjusted_annual_abex_inflated[y] = adjusted_total_abex * prod_ratio
+                else:  # y > cop_year
+                    adjusted_annual_abex_inflated[y] = 0.0
+            
+            self.annual_abex_inflated = adjusted_annual_abex_inflated
+            
+            if output:
+                print(f"\n[4. ABEX Adjustment]")
+                print(f"  ABEX Start Year: {abex_start_year}")
+                print(f"  Original Total ABEX: {original_total_abex:.2f} MM$")
+                print(f"  Adjusted Total ABEX: {sum(adjusted_annual_abex_inflated.values()):.2f} MM$")
+                print(f"  Production Ratio: {production_ratio:.2%}")
+        else:
+            # ABEX가 시작되기 전에 COP 발생
+            for y in years:
+                self.annual_abex_inflated[y] = 0.0
+            
+            if output:
+                print(f"\n[4. ABEX Adjustment]")
+                print(f"  COP occurred before ABEX period - No ABEX")
+        
+        # 누적 ABEX 재계산
+        cumulative_abex = 0.0
+        for y in years:
+            cumulative_abex += self.annual_abex_inflated.get(y, 0.0)
+            self.annual_cum_abex_inflated[y] = cumulative_abex
+        
+        # ===== 5. Other fees 조정 (COP 이후 0) =====
+        for y in years:
+            if y > cop_year:
+                self.other_fees[y] = 0.0
+        
+        # ===== 6. 감가상각 조정 (COP 이후 0) =====
+        if self.annual_depreciation:
+            for y in years:
+                if y > cop_year:
+                    self.annual_depreciation[y] = 0.0
+        
+        if output:
+            print(f"\n[COP Adjustments Complete]")
+            print(f"{'='*60}\n")
+        
+        return {
+            'cop_year': cop_year,
+            'original_gas_production': original_gas_production,
+            'actual_gas_production': actual_gas_production,
+            'original_abex': original_total_abex,
+            'adjusted_abex': sum(self.annual_abex_inflated.values())
+        }
+    
+    def calculate_royalty(self, output=False):
+        """
+        조광료 계산 - 반드시 apply_cop_adjustments() 이후에 호출
+        """
+        if not self.annual_revenue:
+            raise ValueError("수익을 먼저 계산해야 합니다")
+        
+        self._build_full_timeline()
+        
+        cop_year = self.cop_year if self.cop_year else self.all_years[-1]
+        years = self.all_years
+        
+        annual_r_factor = {}
+        annual_royalty = {}
+        cum_royalty = 0.0
+        
+        for y in years:
+            # COP 이후에는 조광료 없음
+            if y > cop_year:
+                annual_r_factor[y] = 0.0
+                annual_royalty[y] = 0.0
+                continue
+            
+            # R-factor 계산 (조정된 누적값 사용)
+            cum_rev_after = self.annual_cum_revenue.get(y, 0.0) - cum_royalty
+            denom = (self.annual_cum_capex_inflated.get(y, 0.0) 
+                    + self.annual_cum_opex_inflated.get(y, 0.0) 
+                    + self.annual_cum_abex_inflated.get(y, 0.0))
+            
+            annual_r_factor[y] = cum_rev_after / denom if denom != 0 else 0.0
+            rate = self._calculate_royalty_rates(annual_r_factor[y])
+            annual_royalty[y] = self.annual_revenue.get(y, 0.0) * rate
+            cum_royalty += annual_royalty[y]
+        
+        self.annual_r_factor = annual_r_factor
+        self.annual_royalty = annual_royalty
+        
+        if output:
+            print(f"[Royalty] Total Royalty: {cum_royalty:.2f} MM$")
+        
+        return self.annual_royalty
+    
+    def calculate_taxes(self, output=False):
+        """
+        세금 계산 - 반드시 apply_cop_adjustments()와 calculate_royalty() 이후에 호출
+        """
+        self._build_full_timeline()
+        
+        if not self.annual_revenue:
+            raise ValueError("수익을 먼저 계산해야 합니다")
+        if not self.annual_royalty:
+            raise ValueError("조광료를 먼저 계산해야 합니다")
+        if not self.annual_depreciation:
+            self.calculate_depreciation(output=False)
+        
+        cop_year = self.cop_year if self.cop_year else self.all_years[-1]
         
         running_loss = 0.0
-        if self.cop_year is None: 
-            self.determine_cop_year()
-        cop_year = self.cop_year
-
         self.loss_carryforward = {}
-
+        
         for y in self.all_years:
-
-            # cop 연도 이후의 세금은 0 처리
+            # COP 이후에는 세금 없음
             if y > cop_year:
                 self.taxable_income[y] = 0.0
+                self.loss_carryforward[y] = 0.0
                 self.corporate_income_tax[y] = 0.0
                 self.annual_total_tax[y] = 0.0
                 continue
             
             self.loss_carryforward[y] = running_loss
-
-            # 기본 과세 표준 계산 (수익 - 비용 - 감가상각)
-            pre_tax_income = self.annual_revenue.get(y, 0.0) - self.annual_opex.get(y, 0.0) - self.annual_royalty.get(y, 0.0) - self.annual_abex.get(y, 0.0) - self.annual_depreciation.get(y, 0.0)
             
+            # 과세 표준 계산 (조정된 값들 사용)
+            pre_tax_income = (self.annual_revenue.get(y, 0.0) 
+                             - self.annual_royalty.get(y, 0.0)
+                             - self.annual_opex_inflated.get(y, 0.0)
+                             - self.annual_abex_inflated.get(y, 0.0)
+                             - self.annual_depreciation.get(y, 0.0))
+            
+            # 이월결손금 처리
             taxable = 0.0
             if pre_tax_income < 0:
-                # 손실 발생 시 이월 결손금 누적
                 running_loss += (-pre_tax_income)
                 taxable = 0.0
             else:
-                # 이익 발생 시 이월 결손금 공제
                 if running_loss > 0:
                     if pre_tax_income >= running_loss:
                         taxable = pre_tax_income - running_loss
@@ -358,85 +608,93 @@ class CashFlowKOR(BaseModel):
                         running_loss -= pre_tax_income
                 else:
                     taxable = pre_tax_income
-
+            
             corp_tax = self._calculate_CIT(taxable)
             self.taxable_income[y] = taxable
             self.corporate_income_tax[y] = corp_tax
             self.annual_total_tax[y] = corp_tax
+        
         self.total_tax = sum(self.annual_total_tax.values())
-
-    def _calculate_royalty_rates(self, r_factor:float):
-        if r_factor < 1.25: return 0.01
-        elif r_factor < 3: return round(((18.28 * (r_factor-1.25)) + 1)/100,2)
-        else: return 0.33
-
-    def calculate_royalty(self):
-        if not self.annual_revenue: self.calculate_annual_revenue(output=False)
+        
+        if output:
+            print(f"[Tax] Total Tax: {self.total_tax:.2f} MM$")
+        
+        return self.annual_total_tax
+    
+    def calculate_net_cash_flow(self, discovery_bonus: Optional[float] = None, output=False):
+        """
+        최종 현금흐름 계산 - 모든 조정이 완료된 후 단순 집계만 수행
+        반드시 다음 순서로 호출되어야 함:
+        1. calculate_annual_revenue()
+        2. determine_cop_year()
+        3. apply_cop_adjustments()
+        4. calculate_royalty()
+        5. calculate_depreciation()
+        6. calculate_taxes()
+        7. calculate_net_cash_flow() ← 여기
+        """
         self._build_full_timeline()
-        years = self.all_years
-        annual_r_factor = {}
-        annual_royalty = {}
-        cum_royalty = 0
-        for y in years:
-            cum_rev_after = self.annual_cum_revenue.get(y, 0.0) - cum_royalty
-            denom = self.annual_cum_capex_inflated.get(y, 0.0) + self.annual_cum_opex_inflated.get(y, 0.0)
-            annual_r_factor[y] = cum_rev_after / denom if denom != 0 else 0.0
-            rate = self._calculate_royalty_rates(annual_r_factor[y])
-            annual_royalty[y] = self.annual_revenue.get(y, 0.0) * rate
-            cum_royalty += annual_royalty[y]
-        self.annual_r_factor = annual_r_factor
-        self.annual_royalty = annual_royalty
-
-    def determine_cop_year(self):
-        """COP 연도를 미리 결정"""
-        self._build_full_timeline()
+        
+        # 필수 계산 확인
         if not self.annual_revenue:
-            self.calculate_annual_revenue(output=False)
+            raise ValueError("수익 계산이 필요합니다")
+        if not self.annual_royalty:
+            raise ValueError("조광료 계산이 필요합니다")
+        if not self.annual_total_tax:
+            raise ValueError("세금 계산이 필요합니다")
         
-        cop_year = self.all_years[-1]
-        
-        for y in self.all_years:
-            if y >= (self.production_start_year or 0):
-                revenue_y = self.annual_revenue.get(y, 0.0)
-                opex_y = self.annual_opex_inflated.get(y, 0.0)
-                
-                if revenue_y < opex_y and revenue_y >= 0:
-                    cop_year = y
-                    break
-        
-        self.cop_year = cop_year
-        return cop_year
-
-    def calculate_net_cash_flow(self, output=True, discovery_bonus: Optional[float] = None):
-        self._build_full_timeline()
-        if not self.annual_revenue: self.calculate_annual_revenue(output=False)
-        if not self.annual_royalty: self.calculate_royalty()
-        if not self.annual_total_tax: self.calculate_taxes(output=False)
         years = self.all_years
-
-        cop_year = self.determine_cop_year()
-
-        # 현금흐름 계산
+        
+        # 현금흐름 계산 (단순 집계)
         self.annual_net_cash_flow = {}
         self.cumulative_cash_flow = {}
         cum_ncf = 0.0
+        
         for y in years:
-            before_or_at_cop = (y <= cop_year)
-
-            rev = self.annual_revenue.get(y, 0.0) if before_or_at_cop else 0.0
-            royalty = self.annual_royalty.get(y, 0.0) if before_or_at_cop else 0.0
+            rev = self.annual_revenue.get(y, 0.0)
+            royalty = self.annual_royalty.get(y, 0.0)
             capex = self.annual_capex_inflated.get(y, 0.0)
-            opex = self.annual_opex_inflated.get(y, 0.0) if before_or_at_cop else 0.0
+            opex = self.annual_opex_inflated.get(y, 0.0)
             abex = self.annual_abex_inflated.get(y, 0.0)
-            tax = self.annual_total_tax.get(y, 0.0) if before_or_at_cop else 0.0
-            other = self.other_fees.get(y, 0.0) if before_or_at_cop else 0.0
-            bonus = (discovery_bonus if y == self.production_start_year else 0.0) if discovery_bonus else 0.0
+            tax = self.annual_total_tax.get(y, 0.0)
+            other = self.other_fees.get(y, 0.0)
             
+            # Discovery bonus
+            bonus = 0.0
+            if discovery_bonus and y == self.production_start_year:
+                bonus = discovery_bonus
+            
+            # NCF = Revenue - Royalty - (CAPEX + OPEX + ABEX + Other) - Tax
             ncf = rev - royalty - (capex + opex + abex + bonus + other) - tax
+            
             self.annual_net_cash_flow[y] = ncf
             cum_ncf += ncf
             self.cumulative_cash_flow[y] = cum_ncf
+        
+        # 총합 계산
+        self.total_revenue = sum(self.annual_revenue.values())
+        self.total_royalty = sum(self.annual_royalty.values())
+        self.total_capex = sum(self.annual_capex_inflated.values())
+        self.total_opex = sum(self.annual_opex_inflated.values())
+        self.total_abex = sum(self.annual_abex_inflated.values())
+        self.total_tax = sum(self.annual_total_tax.values())
+        
+        if output:
+            print(f"\n{'='*60}")
+            print(f"[Net Cash Flow Summary]")
+            print(f"{'='*60}")
+            print(f"  Total Revenue:    {self.total_revenue:>12,.2f} MM$")
+            print(f"  Total Royalty:    {self.total_royalty:>12,.2f} MM$")
+            print(f"  Total CAPEX:      {self.total_capex:>12,.2f} MM$")
+            print(f"  Total OPEX:       {self.total_opex:>12,.2f} MM$")
+            print(f"  Total ABEX:       {self.total_abex:>12,.2f} MM$")
+            print(f"  Total Tax:        {self.total_tax:>12,.2f} MM$")
+            print(f"  {'-'*60}")
+            print(f"  Net Cash Flow:    {cum_ncf:>12,.2f} MM$")
+            print(f"{'='*60}\n")
+        
         return self.annual_net_cash_flow
+#=============
 
     def calculate_npv(self, discount_rate: Optional[float] = None, output=True):
         if not self.annual_net_cash_flow: self.calculate_net_cash_flow(output=False)

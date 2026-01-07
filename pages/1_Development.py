@@ -263,7 +263,7 @@ with st.expander("Production Setup", expanded=True):
             oiip_mmbbl = st.number_input("Oil Reserves (MMbbl)", min_value=0.0, value=329.0, step=10.0, key="oiip_input")
             prod_duration = st.number_input("Prod. Period (Years)", min_value=1, value=30, key="prod_dur_input")
             drilling_rate = st.number_input("Drilling Rate (Wells/Year)", min_value=1, value=12, key="drilling_rate_input")
-            max_prod_rate = st.number_input("Max Prod. Rate (MMcf/y)", min_value=0, value=250_000, key="max_rate_input")
+            max_prod_rate = st.number_input("Max Prod. Rate (MMcf/y)", min_value=0, value=482_000, key="max_rate_input")
 
             if st.button("🚀 Generate Field Production Profile", width='stretch'):
                 if st.session_state.profile is None:

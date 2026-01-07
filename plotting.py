@@ -15,18 +15,24 @@ def plot_production_profile(cf, show: bool = True):
     """
     if not cf.annual_gas_production:
         raise ValueError("Production profile not calculated. Run calculate_production_profile() first.")
-
-    years = sorted(cf.annual_gas_production.keys())
+    years = cf.all_years
+    reduced_years = []
+    for y in years:
+        if y <= cf.cop_year:
+            reduced_years.append(y)
+        else:
+            break
+    years = reduced_years
     gas_production_vals = [cf.annual_gas_production.get(y, 0.0) for y in years]
     oil_production_vals = [cf.annual_oil_production.get(y, 0.0) for y in years]
 
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=years, y=gas_production_vals, mode='lines', name='Gas Production'))
-    fig.add_trace(go.Scatter(x=years, y=oil_production_vals, mode='lines', name='Oil Production'))
+    fig.add_trace(go.Bar(x=years, y=gas_production_vals, name='Gas Production'))
+    fig.add_trace(go.Bar(x=years, y=oil_production_vals, name='Oil Production'))
     fig.update_layout(title='Production Profile', xaxis_title='Year', yaxis_title='Production (MM barrels)')
     return fig
 
-def plot_df_profile(years, gas_production, oil_production, drilled_wells):
+def plot_df_profile(years, gas_production, oil_production, drilled_wells=None):
     fig_p = make_subplots(specs=[[{"secondary_y": True}]])
     
     fig_p.add_trace(
@@ -37,19 +43,19 @@ def plot_df_profile(years, gas_production, oil_production, drilled_wells):
         go.Bar(x=years, y=oil_production, name='Oil/Cond. (MMbbl)'),
         secondary_y=False,
     )
-    fig_p.add_trace(
-        go.Scatter(x=years, y=drilled_wells, name='Drilled Wells', mode='lines+markers'),
-        secondary_y=True,
-    )
-    fig_p.update_yaxes(secondary_y=True)
     fig_p.update_layout(
         title="Annual Production Profile",
         xaxis_title="Year",
         legend_title="Product"
     )
-    
     fig_p.update_yaxes(title_text="Volume", secondary_y=False)
-    fig_p.update_yaxes(title_text="Drilled Wells", range=[0, 20], secondary_y=True, showgrid=False)
+
+    if drilled_wells:
+        fig_p.add_trace(
+            go.Scatter(x=years, y=drilled_wells, name='Drilled Wells', mode='lines+markers'),
+            secondary_y=True,
+        )
+        fig_p.update_yaxes(title_text="Drilled Wells", range=[0, 20], secondary_y=True, showgrid=False)
 
     return fig_p
     
@@ -329,15 +335,22 @@ def summary_plot(cf, width=1200, height=700):
 
 def plot_cashflow(cf):
     years = cf.all_years
+    reduced_years = []
+    for y in years:
+        if y <= cf.cop_year:
+            reduced_years.append(y)
+        else:
+            break
+
+    years = reduced_years
     rev = np.array([cf.annual_revenue.get(y, 0.0) for y in years])
     royalty = np.array([cf.annual_royalty.get(y, 0.0) for y in years])
-    cap = np.array([cf.annual_capex.get(y, 0.0) for y in years])
-    opx = np.array([cf.annual_opex.get(y, 0.0) for y in years])
-    abx = np.array([cf.annual_abex.get(y, 0.0) for y in years])
+    cap = np.array([cf.annual_capex_inflated.get(y, 0.0) for y in years])
+    opx = np.array([cf.annual_opex_inflated.get(y, 0.0) for y in years])
+    abx = np.array([cf.annual_abex_inflated.get(y, 0.0) for y in years])
     tax = np.array([cf.annual_total_tax.get(y, 0.0) for y in years])
     net = np.array([cf.annual_net_cash_flow.get(y, 0.0) for y in years])
     cum = np.array([cf.cumulative_cash_flow.get(y, 0.0) for y in years])
-
 
     fig = make_subplots(
         rows=1, cols=1,
