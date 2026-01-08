@@ -6,13 +6,13 @@
         "giip_bcf": 4980.0,
         "oiip_mmbbl": 329.0,
         "drilling_rate": 12,
-        "max_prod_rate": 482000
+        "max_prod_rate": 438000
     },
     "development": {
         "sunk_cost": 0.0,
         "exp_start_year": 2024,
-        "dev_start_year": 2026,
-        "drill_start_year": 2033,
+        "dev_start_year": 2024,
+        "drill_start_year": 2030,
         "dev_case": "FPSO_case",
         "study_costs": {
             "feasibility": {
@@ -68,16 +68,16 @@
         }
     },
     "price_deck": {
-        "oil_init": 70.0,
+        "oil_init": 73.0,
         "gas_init": 8.0,
         "start_year": 2025,
         "end_year": 2075,
         "inflation_pct": 1.5,
-        "cap_2x": true
+        "cap_2x": false
     },
     "economics": {
         "base_year": 2024,
-        "discount_rate": 0.10,
+        "discount_rate": 0.1,
         "exchange_rate": 1350.0,
         "cost_inflation": 0.0125,
         "useful_life": 10,

@@ -53,7 +53,7 @@ def ensure_state_init():
             "well_eur_input": d["production"]["well_eur_bcf"],
             "prod_dur_input": d["production"]["prod_duration"],
             "giip_input": d["production"]["giip_bcf"],
-            "oiip_mmbbl": d["production"]["oiip_mmbbl"],
+            "oiip_input": d["production"]["oiip_mmbbl"],
             "drilling_rate_input": d["production"]["drilling_rate"],
             "max_rate_input": d["production"]["max_prod_rate"],
             "sunk_cost_input": d["development"]["sunk_cost"],
