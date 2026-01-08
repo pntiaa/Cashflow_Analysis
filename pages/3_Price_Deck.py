@@ -162,14 +162,14 @@ st.header("2. Automated Price Generation")
 with st.expander("🪄 Auto Generation Parameters", expanded=True):
     col_a1, col_a2, col_a3 = st.columns(3)
     with col_a1:
-        a_start_year = st.number_input("Start Year", value=2025, key="a_start")
-        a_end_year = st.number_input("End Year", value=2075, key="a_end")
+        a_start_year = st.number_input("Start Year", value=st.session_state.price_start_year_input, key="price_start_year_input")
+        a_end_year = st.number_input("End Year", value=st.session_state.price_end_year_input, key="price_end_year_input")
     with col_a2:
-        a_oil_init = st.number_input("Initial Oil Price ($/bbl)", value=70.0, key="a_oil_init")
-        a_gas_init = st.number_input("Initial Gas Price ($/mcf)", value=8.0, key="a_gas_init")
+        a_oil_init = st.number_input("Initial Oil Price ($/bbl)", value=st.session_state.oil_init_input, key="oil_init_input")
+        a_gas_init = st.number_input("Initial Gas Price ($/mcf)", value=st.session_state.gas_init_input, key="gas_init_input")
     with col_a3:
-        a_inflation = st.number_input("Inflation Rate (%)", value=1.5, step=0.1, key="a_inf_pct") / 100.0
-        cap_2x = st.checkbox("Stop increasing at 2x initial price", value=True, key="cap_2x")
+        a_inflation = st.number_input("Inflation Rate (%)", value=st.session_state.price_inflation_input, step=0.1, key="price_inflation_input") / 100.0
+        cap_2x = st.checkbox("Stop increasing at 2x initial price", value=st.session_state.price_cap_2x_input, key="price_cap_2x_input")
 
     if st.button("⚡ Generate & Apply Prices", type="primary"):
         temp_oil = {}

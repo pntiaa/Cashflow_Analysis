@@ -73,14 +73,15 @@ with col_s2.container(border=True, height="stretch"):
 with st.expander("⚙️ Global Economic Parameters"):
     col_e1, col_e2, col_e3 = st.columns(3)
     with col_e1:
-        base_year = st.number_input("Base Year (for PV)", value=2024)
-        discount_rate = st.number_input("Discount Rate (fraction)", value=0.10, format="%.2f")
+        base_year = st.number_input("Base Year (for PV)", value=st.session_state.base_year_input, key="base_year_input")
+        discount_rate = st.number_input("Discount Rate (fraction)", value=st.session_state.discount_rate_input, format="%.2f", key="discount_rate_input")
     with col_e2:
-        exchange_rate = st.number_input("Exchange Rate (KRW/USD)", value=1350.0)
-        cost_inflation = st.number_input("Cost Inflation Rate", value=0.0125, format="%0.4f")
+        exchange_rate = st.number_input("Exchange Rate (KRW/USD)", value=st.session_state.exchange_rate_input, key="exchange_rate_input")
+        cost_inflation = st.number_input("Cost Inflation Rate", value=st.session_state.cost_inflation_input, format="%0.4f", key="cost_inflation_input")
     with col_e3:
-        depreciation_method = st.selectbox("Depreciation Method", ["Unit of Production", "Straight Line", "Declining Balance"], index=0)
-        useful_life = st.number_input("Useful Life (Depreciation)", value=10)
+        methods = ["Unit of Production", "Straight Line", "Declining Balance"]
+        depreciation_method = st.selectbox("Depreciation Method", methods, index=methods.index(st.session_state.depreciation_method_input), key="depreciation_method_input")
+        useful_life = st.number_input("Useful Life (Depreciation)", value=st.session_state.useful_life_input, key="useful_life_input")
 
 # --- Run Button ---
 run_button = st.button("🚀 Run Cash Flow Analysis", width='content', type="primary")

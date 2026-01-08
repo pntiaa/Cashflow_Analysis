@@ -10,6 +10,17 @@ from typing import Dict, List
 
 DATA_DIR = Path("./data")
 DATA_DIR.mkdir(exist_ok=True)
+DEFAULTS_FILE = DATA_DIR / "defaults.json"
+
+def load_defaults():
+    if DEFAULTS_FILE.exists():
+        with open(DEFAULTS_FILE, "r") as f:
+            return json.load(f)
+    return {}
+
+def save_defaults(defaults):
+    with open(DEFAULTS_FILE, "w") as f:
+        json.dump(defaults, f, indent=4)
 
 def ensure_state_init():
     if "current_project" not in st.session_state:
@@ -31,6 +42,78 @@ def ensure_state_init():
         st.session_state.prod_data = None
     if "drilling_plan_results" not in st.session_state:
         st.session_state.drilling_plan_results = None
+    if "defaults" not in st.session_state:
+        st.session_state.defaults = load_defaults()
+    
+    # Initialize input parameters from defaults if not present
+    if st.session_state.defaults:
+        d = st.session_state.defaults
+        p_keys = {
+            "qi_input": d["production"]["qi_mmcfd"],
+            "well_eur_input": d["production"]["well_eur_bcf"],
+            "prod_dur_input": d["production"]["prod_duration"],
+            "giip_input": d["production"]["giip_bcf"],
+            "oiip_mmbbl": d["production"]["oiip_mmbbl"],
+            "drilling_rate_input": d["production"]["drilling_rate"],
+            "max_rate_input": d["production"]["max_prod_rate"],
+            "sunk_cost_input": d["development"]["sunk_cost"],
+            "exp_start_year_input": d["development"]["exp_start_year"],
+            "dev_start_year_input": d["development"]["dev_start_year"],
+            "drill_start_year_input": d["development"]["drill_start_year"],
+            "dev_case_input": d["development"]["dev_case"],
+            "feas_study_input": d["development"]["study_costs"]["feasibility"]["cost"],
+            "feas_study_t": d["development"]["study_costs"]["feasibility"]["timing"],
+            "feas_study_d": d["development"]["study_costs"]["feasibility"]["duration"],
+            "concept_study_input": d["development"]["study_costs"]["concept"]["cost"],
+            "concept_study_t": d["development"]["study_costs"]["concept"]["timing"],
+            "concept_study_d": d["development"]["study_costs"]["concept"]["duration"],
+            "feed_cost_input": d["development"]["study_costs"]["feed_fpso"]["cost"],
+            "feed_cost_t": d["development"]["study_costs"]["feed_fpso"]["timing"],
+            "feed_cost_d": d["development"]["study_costs"]["feed_fpso"]["duration"],
+            "pm_others_input": d["development"]["study_costs"]["pm_others_per_well"],
+            "drilling_cost_input": d["development"]["facility_capex"]["drilling_per_well"],
+            "subsea_cost_input": d["development"]["facility_capex"]["subsea_per_well"],
+            "fpso_cost_input": d["development"]["facility_capex"]["fpso_fpso"]["cost"],
+            "fpso_cost_t": d["development"]["facility_capex"]["fpso_fpso"]["timing"],
+            "fpso_cost_d": d["development"]["facility_capex"]["fpso_fpso"]["duration"],
+            "pipeline_cost_input": d["development"]["facility_capex"]["pipeline_fpso"]["cost"],
+            "pipeline_cost_t": d["development"]["facility_capex"]["pipeline_fpso"]["timing"],
+            "pipeline_cost_d": d["development"]["facility_capex"]["pipeline_fpso"]["duration"],
+            "terminal_cost_input": d["development"]["facility_capex"]["terminal_fpso"]["cost"],
+            "terminal_cost_t": d["development"]["facility_capex"]["terminal_fpso"]["timing"],
+            "terminal_cost_d": d["development"]["facility_capex"]["terminal_fpso"]["duration"],
+            "opex_per_bcf_input": d["development"]["opex_abex"]["opex_per_bcf"],
+            "opex_fixed_input": d["development"]["opex_abex"]["opex_fixed"],
+            "abex_per_well_input": d["development"]["opex_abex"]["abex_per_well"],
+            "abex_fpso_input": d["development"]["opex_abex"]["abex_fpso_fpso"],
+            "base_year_input": d["economics"]["base_year"],
+            "discount_rate_input": d["economics"]["discount_rate"],
+            "exchange_rate_input": d["economics"]["exchange_rate"],
+            "cost_inflation_input": d["economics"]["cost_inflation"],
+            "useful_life_input": d["economics"]["useful_life"],
+            "depreciation_method_input": d["economics"]["depreciation_method"],
+            "oil_init_input": d["price_deck"]["oil_init"],
+            "gas_init_input": d["price_deck"]["gas_init"],
+            "price_start_year_input": d["price_deck"]["start_year"],
+            "price_end_year_input": d["price_deck"]["end_year"],
+            "price_inflation_input": d["price_deck"]["inflation_pct"],
+            "price_cap_2x_input": d["price_deck"]["cap_2x"],
+            "q_dev_start_year": d["development"]["dev_start_year"],
+            "q_sunk_cost": d["development"]["sunk_cost"],
+            "q_exp_start_year": d["development"]["exp_start_year"],
+        }
+        for k, v in p_keys.items():
+            if k not in st.session_state:
+                st.session_state[k] = v
+        
+        # Also initialize price_deck_oil and gas if not present
+        if "price_deck_oil" not in st.session_state:
+            start = d["price_deck"]["start_year"]
+            end = d["price_deck"]["end_year"]
+            init_oil = d["price_deck"]["oil_init"]
+            init_gas = d["price_deck"]["gas_init"]
+            st.session_state.price_deck_oil = {y: init_oil for y in range(start, end + 1)}
+            st.session_state.price_deck_gas = {y: init_gas for y in range(start, end + 1)}
 
 def sanitize_data(data):
     """
@@ -111,7 +194,55 @@ def load_project(project_name: str):
     st.session_state.current_project = project_name
 
 def list_projects():
-    return [f.stem for f in DATA_DIR.glob("*.json")]
+    # Bypass 'defaults' and other non-project files
+    return [f.stem for f in DATA_DIR.glob("*.json") if f.stem != "defaults"]
+
+def delete_project(project_name: str):
+    file_path = DATA_DIR / f"{project_name}.json"
+    if file_path.exists():
+        os.remove(file_path)
+        if st.session_state.get("current_project") == project_name:
+            st.session_state.current_project = None
+            st.session_state.production_cases = {}
+            st.session_state.development_cases = {}
+            st.session_state.price_cases = {}
+            st.session_state.cashflow_results = {}
+        return True
+    return False
+
+def delete_case(project_name: str, case_type: str, case_name: str):
+    file_path = DATA_DIR / f"{project_name}.json"
+    if not file_path.exists():
+        return False
+    
+    with open(file_path, "r") as f:
+        data = json.load(f)
+    
+    # Mapping readable types to dict keys
+    type_map = {
+        "Production": "production_cases",
+        "Development": "development_cases",
+        "Price": "price_cases",
+        "Cash Flow Result": "cashflow_results"
+    }
+    
+    key = type_map.get(case_type)
+    if key and key in data and case_name in data[key]:
+        del data[key][case_name]
+        
+        # Save back to file
+        with open(file_path, "w") as f:
+            json.dump(data, f, indent=4)
+        
+        # If it's the current project, update session state too
+        if st.session_state.get("current_project") == project_name:
+            if key == "production_cases": del st.session_state.production_cases[case_name]
+            elif key == "development_cases": del st.session_state.development_cases[case_name]
+            elif key == "price_cases": del st.session_state.price_cases[case_name]
+            elif key == "cashflow_results": del st.session_state.cashflow_results[case_name]
+        
+        return True
+    return False
 
 def render_project_sidebar():
     """Renders the project management section in the sidebar. Shared across all pages."""

@@ -24,12 +24,24 @@ def plot_production_profile(cf, show: bool = True):
             break
     years = reduced_years
     gas_production_vals = [cf.annual_gas_production.get(y, 0.0) for y in years]
-    oil_production_vals = [cf.annual_oil_production.get(y, 0.0) for y in years]
+    cumulative_gas_production_vals = np.cumsum([cf.annual_gas_production.get(y, 0.0) for y in years])
 
-    fig = go.Figure()
+    text_vals = ["" for _ in range(len(years))]
+    if len(years) > 0:
+        text_vals[-1] = f"{cumulative_gas_production_vals[-1]:.1f} Bcf"
+
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
     fig.add_trace(go.Bar(x=years, y=gas_production_vals, name='Gas Production'))
-    fig.add_trace(go.Bar(x=years, y=oil_production_vals, name='Oil Production'))
-    fig.update_layout(title='Production Profile', xaxis_title='Year', yaxis_title='Production (MM barrels)')
+    # fig.update_layout(title='Production Profile', xaxis_title='Year', yaxis_title='Annual Gas Production (Bcf)')
+    fig.add_trace(go.Scatter(
+        x=years, 
+        y=cumulative_gas_production_vals, 
+        name='Cumulative Gas Production',
+        mode='lines+markers+text',
+        text=text_vals,
+        textposition="top center"
+    ), secondary_y=True)
+    fig.update_yaxes(title_text="Cumulative Gas Production (Bcf)", secondary_y=True, showgrid=False)
     return fig
 
 def plot_df_profile(years, gas_production, oil_production, drilled_wells=None):
@@ -696,4 +708,67 @@ def plot_detailed_cost_breakdown(dev):
         legend_title="Cost Component",
         template='plotly_white'
     )
+    return fig
+
+def plot_tornado_chart(sensitivity_results: pd.DataFrame, base_npv: float):
+    """
+    Plots a tornado chart for sensitivity analysis.
+    
+    sensitivity_results DataFrame columns:
+    - Parameter: Name of the parameter
+    - Low_NPV: NPV when parameter is at its low value
+    - High_NPV: NPV when parameter is at its high value
+    """
+    df = sensitivity_results.copy()
+    
+    # Calculate differences from base NPV
+    df['Low_Impact'] = df['Low_NPV'] - base_npv
+    df['High_Impact'] = df['High_NPV'] - base_npv
+    
+    # Calculate absolute max impact for sorting
+    df['Max_Abs_Impact'] = df[['Low_Impact', 'High_Impact']].abs().max(axis=1)
+    df = df.sort_values(by='Max_Abs_Impact', ascending=True)
+    
+    fig = go.Figure()
+    
+    # Add Low Impact bars
+    fig.add_trace(go.Bar(
+        y=df['Parameter'],
+        x=df['Low_Impact'],
+        name='Low',
+        orientation='h',
+        marker_color='indianred',
+        hovertemplate='Low NPV: %{customdata:,.0f} MM$<br>Impact: %{x:,.0f} MM$<extra></extra>',
+        customdata=df['Low_NPV']
+    ))
+    
+    # Add High Impact bars
+    fig.add_trace(go.Bar(
+        y=df['Parameter'],
+        x=df['High_Impact'],
+        name='High',
+        orientation='h',
+        marker_color='royalblue',
+        hovertemplate='High NPV: %{customdata:,.0f} MM$<br>Impact: %{x:,.0f} MM$<extra></extra>',
+        customdata=df['High_NPV']
+    ))
+    
+    fig.update_layout(
+        title=dict(
+            text=f"Tornado Chart - Impact on NPV (Base: {base_npv:,.0f} MM$)",
+            x=0.5,
+            xanchor='center'
+        ),
+        barmode='relative',
+        xaxis_title="NPV Difference (MM$)",
+        yaxis_title="Parameters",
+        height=min(800, 300 + len(df) * 40),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        margin=dict(l=150, r=20, t=80, b=50),
+        hovermode='closest'
+    )
+    
+    # Add a vertical line at 0 (base NPV impact)
+    fig.add_vline(x=0, line_width=2, line_dash="dash", line_color="black")
+    
     return fig

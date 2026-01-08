@@ -93,7 +93,7 @@ st.divider()
 # st.caption("Development Parameters")
 st.subheader("🏗️ Development Cost from QUE$TOR")
 
-dev_start_year = st.number_input("Development Start Year", value=2024, key="q_dev_start_year")
+dev_start_year = st.number_input("Development Start Year", value=st.session_state.q_dev_start_year, key="q_dev_start_year")
 
 # --- 1. File Upload Section ---
 
@@ -132,8 +132,8 @@ st.space(size="small")
 
 with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
     st.text("🔍 Exploration Costs", width=200)
-    sunk_cost = st.number_input("Sunk Cost", value=0.0, key="q_sunk_cost")
-    exploration_start_year = st.number_input("Exploration Start Year", value=2024, step=1, key="q_exp_start_year")
+    sunk_cost = st.number_input("Sunk Cost", value=st.session_state.q_sunk_cost, key="q_sunk_cost")
+    exploration_start_year = st.number_input("Exploration Start Year", value=st.session_state.q_exp_start_year, step=1, key="q_exp_start_year")
     years_range = list(range(int(exploration_start_year), int(exploration_start_year) + 10))
     if st.button("🔄 Exploration Costs Manual Input"):
         exploration_data = {

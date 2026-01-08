@@ -48,56 +48,63 @@ with col_c1:
             if "input_params" in case_data:
                 params = case_data["input_params"]
                 # Production params
-                st.session_state.qi_input = params.get("qi_input", 40.0)
-                st.session_state.well_eur_input = params.get("well_eur_input", 60.0)
-                st.session_state.prod_dur_input = params.get("prod_dur_input", 30)
-                st.session_state.giip_input = params.get("giip_input", 4980.0)
-                st.session_state.oiip_input = params.get("oiip_input", 329.0)
-                st.session_state.drilling_rate_input = params.get("drilling_rate_input", 12)
-                st.session_state.max_rate_input = params.get("max_rate_input", 483000)
-                
-                # Development params
-                st.session_state.sunk_cost_input = params.get("sunk_cost_input", 0.0)
-                st.session_state.exp_start_year_input = params.get("exp_start_year_input", 2024)
-                st.session_state.dev_start_year_input = params.get("dev_start_year_input", 2026)
-                st.session_state.drill_start_year_input = params.get("drill_start_year_input", 2030)
-                st.session_state.dev_case_input = params.get("dev_case_input", "FPSO_case")
-                
-                # Cost params (Simple + Granular)
                 # Helper to set safe fallback
                 def safe_set(key, default):
                     st.session_state[key] = params.get(key, default)
 
-                safe_set("feas_study_input", 3.0)
-                safe_set("feas_study_t", 0)
-                safe_set("feas_study_d", 1)
+                d_eco = st.session_state.defaults["economics"]
+                d_dev = st.session_state.defaults["development"]
+                d_prod = st.session_state.defaults["production"]
+                d_study = d_dev["study_costs"]
+                d_fac = d_dev["facility_capex"]
+                d_opab = d_dev["opex_abex"]
+
+                safe_set("qi_input", d_prod["qi_mmcfd"])
+                safe_set("well_eur_input", d_prod["well_eur_bcf"])
+                safe_set("prod_dur_input", d_prod["prod_duration"])
+                safe_set("giip_input", d_prod["giip_bcf"])
+                safe_set("oiip_mmbbl", d_prod["oiip_mmbbl"])
+                safe_set("drilling_rate_input", d_prod["drilling_rate"])
+                safe_set("max_rate_input", d_prod["max_prod_rate"])
                 
-                safe_set("concept_study_input", 3.0)
-                safe_set("concept_study_t", 0)
-                safe_set("concept_study_d", 1)
-
-                safe_set("feed_cost_input", 42.0)
-                safe_set("feed_cost_t", 0)
-                safe_set("feed_cost_d", 1)
-
-                safe_set("pm_others_input", 10.1)
-
-                safe_set("drilling_cost_input", 95.0)
+                # Development params
+                safe_set("sunk_cost_input", d_dev["sunk_cost"])
+                safe_set("exp_start_year_input", d_dev["exp_start_year"])
+                safe_set("dev_start_year_input", d_dev["dev_start_year"])
+                safe_set("drill_start_year_input", d_dev["drill_start_year"])
+                safe_set("dev_case_input", d_dev["dev_case"])
                 
-                safe_set("subsea_cost_input", 41.1)
+                # Cost params (Simple + Granular)
+                safe_set("feas_study_input", d_study["feasibility"]["cost"])
+                safe_set("feas_study_t", d_study["feasibility"]["timing"])
+                safe_set("feas_study_d", d_study["feasibility"]["duration"])
                 
-                safe_set("fpso_cost_input", 1570.0)
-                safe_set("fpso_cost_t", 0)
-                safe_set("fpso_cost_d", 7)
+                safe_set("concept_study_input", d_study["concept"]["cost"])
+                safe_set("concept_study_t", d_study["concept"]["timing"])
+                safe_set("concept_study_d", d_study["concept"]["duration"])
 
-                safe_set("pipeline_cost_input", 244.0)
-                safe_set("pipeline_cost_t", 0)
-                safe_set("pipeline_cost_d", 7)
+                safe_set("feed_cost_input", d_study["feed_fpso"]["cost"])
+                safe_set("feed_cost_t", d_study["feed_fpso"]["timing"])
+                safe_set("feed_cost_d", d_study["feed_fpso"]["duration"])
 
-                safe_set("opex_per_bcf_input", 2.093)
-                safe_set("opex_fixed_input", 347.424)
-                safe_set("abex_per_well_input", 17.4)
-                safe_set("abex_fpso_input", 114.7)
+                safe_set("pm_others_input", d_study["pm_others_per_well"])
+
+                safe_set("drilling_cost_input", d_fac["drilling_per_well"])
+                
+                safe_set("subsea_cost_input", d_fac["subsea_per_well"])
+                
+                safe_set("fpso_cost_input", d_fac["fpso_fpso"]["cost"])
+                safe_set("fpso_cost_t", d_fac["fpso_fpso"]["timing"])
+                safe_set("fpso_cost_d", d_fac["fpso_fpso"]["duration"])
+
+                safe_set("pipeline_cost_input", d_fac["pipeline_fpso"]["cost"])
+                safe_set("pipeline_cost_t", d_fac["pipeline_fpso"]["timing"])
+                safe_set("pipeline_cost_d", d_fac["pipeline_fpso"]["duration"])
+
+                safe_set("opex_per_bcf_input", d_opab["opex_per_bcf"])
+                safe_set("opex_fixed_input", d_opab["opex_fixed"])
+                safe_set("abex_per_well_input", d_opab["abex_per_well"])
+                safe_set("abex_fpso_input", d_opab["abex_fpso_fpso"])
 
             # 2. Restore Results & Visualizations
             if "dev_obj" in case_data:
@@ -219,8 +226,8 @@ with st.expander("Production Setup", expanded=True):
     
     with t1:
         with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
-            qi_mmcfd = st.number_input("Initial Rate (MMcf/d)", min_value=1.0, value=40.0, key="qi_input")
-            well_eur_bcf = st.number_input("Well EUR (BCF)", min_value=1.0, value=60.0, key="well_eur_input")
+            qi_mmcfd = st.number_input("Initial Rate (MMcf/d)", min_value=1.0, value=st.session_state.qi_input, key="qi_input")
+            well_eur_bcf = st.number_input("Well EUR (BCF)", min_value=1.0, value=st.session_state.well_eur_input, key="well_eur_input")
         
             tc_duration = st.session_state.get("prod_dur_input", 30)
         
@@ -259,11 +266,11 @@ with st.expander("Production Setup", expanded=True):
 
     with t2:
         with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
-            giip_bcf = st.number_input("Gas Reserves (BCF)", min_value=1.0, value=4980.0, step=100.0, key="giip_input")
-            oiip_mmbbl = st.number_input("Oil Reserves (MMbbl)", min_value=0.0, value=329.0, step=10.0, key="oiip_input")
-            prod_duration = st.number_input("Prod. Period (Years)", min_value=1, value=30, key="prod_dur_input")
-            drilling_rate = st.number_input("Drilling Rate (Wells/Year)", min_value=1, value=12, key="drilling_rate_input")
-            max_prod_rate = st.number_input("Max Prod. Rate (MMcf/y)", min_value=0, value=482_000, key="max_rate_input")
+            giip_bcf = st.number_input("Gas Reserves (BCF)", min_value=1.0, value=st.session_state.giip_input, step=100.0, key="giip_input")
+            oiip_mmbbl = st.number_input("Oil Reserves (MMbbl)", min_value=0.0, value=st.session_state.oiip_input, step=10.0, key="oiip_input")
+            prod_duration = st.number_input("Prod. Period (Years)", min_value=1, value=st.session_state.prod_dur_input, key="prod_dur_input")
+            drilling_rate = st.number_input("Drilling Rate (Wells/Year)", min_value=1, value=st.session_state.drilling_rate_input, key="drilling_rate_input")
+            max_prod_rate = st.number_input("Max Prod. Rate (MMcf/y)", min_value=0, value=st.session_state.max_rate_input, key="max_rate_input")
 
             if st.button("🚀 Generate Field Production Profile", width='stretch'):
                 if st.session_state.profile is None:
@@ -301,27 +308,26 @@ with st.expander("Production Setup", expanded=True):
 st.subheader("🛠️ Development Cost Generation")
 with st.expander("Detailed Development Parameter Editor", expanded=True):
     
-    with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
+    with st.container(horizontal=True, vertical_alignment="top", gap="small"):
         st.text("🔍 Exploration Costs", width=200)
-        sunk_cost = st.number_input("Sunk Cost", value=0.0, key="sunk_cost_input", width=200)
-        exploration_start_year = st.number_input("Exploration Start Year", value=2024, step=1, key="exp_start_year_input", width=200)
+        sunk_cost = st.number_input("Sunk Cost", value=st.session_state.sunk_cost_input, key="sunk_cost_input", width=200)
+        exploration_start_year = st.number_input("Exploration Start Year", value=st.session_state.exp_start_year_input, step=1, key="exp_start_year_input", width=200)
         years_range = list(range(int(exploration_start_year), int(exploration_start_year) + 10))
-        if st.button("🔄 Exploration Costs Manual Input"):
-            exploration_data = {
-                "Year": years_range,
-                "Exploration Costs (MM$)": [0.0] * 10
-            }
-            exploration_df = pd.DataFrame(exploration_data).set_index("Year")
-            exploration_df.index = exploration_df.index.astype(int)
-            st.session_state.exploration_data = exploration_df.T
+        if "exploration_data" not in st.session_state:
+            st.session_state.exploration_data = pd.DataFrame(
+                {"Year": years_range, "Exploration Costs (MM$)": [0.0] * 10}
+            ).set_index("Year").T
+
+        if st.button("Apply to update years"):
+            st.session_state.exploration_data.columns = years_range
     
-    with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
+    with st.container(horizontal=True, vertical_alignment="top", gap="small"):
         if "exploration_data" in st.session_state:
             st.session_state.exploration_data = st.data_editor(st.session_state.exploration_data, width='stretch')
 
     st.markdown("---")
 
-    with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
+    with st.container(horizontal=True, vertical_alignment="top", gap="small"):
         st.text("🗓️ Development Year", width=200)
         dev_start_year = st.number_input("Development Start Year", value=2026, step=1, width=200, key="dev_start_year_input")
         drill_start_year = st.number_input("Production Drilling Start Year", value=2033, step=1, width=200, key="drill_start_year_input")
@@ -331,7 +337,7 @@ with st.expander("Detailed Development Parameter Editor", expanded=True):
     
     # ---------------- Study & PM Costs (Granular) ----------------
     # 1. Feasibility Study
-    with st.container(horizontal=True, width='content', horizontal_alignment='left', vertical_alignment="bottom", gap="medium"):
+    with st.container(horizontal=True, width='content', horizontal_alignment='left', vertical_alignment="top", gap="medium"):
         st.text("📋 Study & PM Costs", width=200)
 
         with st.container(horizontal=True, horizontal_alignment='left', vertical_alignment="bottom", gap="small"):
@@ -341,16 +347,19 @@ with st.expander("Detailed Development Parameter Editor", expanded=True):
 
         # 2. Concept Study
         with st.container(horizontal=True, horizontal_alignment='left', vertical_alignment="bottom", gap="small"):
-            concept_study = st.number_input("Concept Study", value=3.0, key="concept_study_input", width=100)
-            concept_t = st.number_input("Timing", value=0, key="concept_study_t", help="Relative to Dev Start Year", width=60)
-            concept_d = st.number_input("Duration", min_value=1, value=6, key="concept_study_d", width=60)
+            concept_study = st.number_input("Concept Study", value=st.session_state.concept_study_input, key="concept_study_input", width=100)
+            concept_t = st.number_input("Timing", value=st.session_state.concept_study_t, key="concept_study_t", help="Relative to Dev Start Year", width=60)
+            concept_d = st.number_input("Duration", min_value=1, value=st.session_state.concept_study_d, key="concept_study_d", width=60)
         
         # 3. FEED Cost
         with st.container(horizontal=True, horizontal_alignment='left', vertical_alignment="bottom", gap="small"):
-            feed_val = 42.0 if dev_case == "FPSO_case" else 3.0
-            feed_cost = st.number_input("FEED Cost", value=feed_val, key="feed_cost_input", width=100)
-            feed_t = st.number_input("Timing", value=0, key="feed_cost_t", help="Relative to Dev Start Year", width=60)
-            feed_d = st.number_input("Duration", min_value=1, value=6, key="feed_cost_d", width=60)
+            d_study = st.session_state.defaults["development"]["study_costs"]
+            f_val = d_study["feed_fpso"]["cost"] if dev_case == "FPSO_case" else d_study["feed_tieback"]["cost"]
+            # We only use f_val if there is no session state value yet or it's not from a loaded case
+            # But Streamlit key handles it. Just set the default value based on case.
+            feed_cost = st.number_input("FEED Cost", value=f_val, key="feed_cost_input", width=100)
+            feed_t = st.number_input("Timing", value=st.session_state.feed_cost_t, key="feed_cost_t", help="Relative to Dev Start Year", width=60)
+            feed_d = st.number_input("Duration", min_value=1, value=st.session_state.feed_cost_d, key="feed_cost_d", width=60)
 
         # 4. PM & Others
         with st.container(horizontal=True, horizontal_alignment='left', vertical_alignment="bottom", gap="small"):
@@ -360,7 +369,7 @@ with st.expander("Detailed Development Parameter Editor", expanded=True):
 
     # ---------------- Facility CAPEX (Granular) ----------------
 
-    with st.container(horizontal=True, width='content', horizontal_alignment='left', vertical_alignment="bottom", gap="medium"):
+    with st.container(horizontal=True, width='content', horizontal_alignment='left', vertical_alignment="top", gap="medium"):
         st.text("🏗️ Facility CAPEX", width=200)
 
         with st.container(horizontal=True, width='content', horizontal_alignment='left', vertical_alignment="bottom", gap="small"):
@@ -391,12 +400,14 @@ with st.expander("Detailed Development Parameter Editor", expanded=True):
 
     st.markdown("---")
 
-    with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
+    with st.container(horizontal=True, vertical_alignment="top", gap="small"):
         st.text("💸 OPEX & ABEX", width=200)
-        opex_per_bcf = st.number_input("OPEX per BCF", value=2.093, format="%.3f", key="opex_per_bcf_input", width=160)
-        opex_fixed = st.number_input("OPEX Fixed (MM$/y)", value=347.424, key="opex_fixed_input", width=160)
-        abex_per_well = st.number_input("ABEX per Well", value=17.4, key="abex_per_well_input", width=160)
-        abex_fpso = st.number_input("ABEX FPSO", value=114.7 if dev_case == "FPSO_case" else 90.0, key="abex_fpso_input", width=160)
+        opex_per_bcf = st.number_input("OPEX per BCF", value=st.session_state.opex_per_bcf_input, format="%.3f", key="opex_per_bcf_input", width=160)
+        opex_fixed = st.number_input("OPEX Fixed (MM$/y)", value=st.session_state.opex_fixed_input, key="opex_fixed_input", width=160)
+        abex_per_well = st.number_input("ABEX per Well", value=st.session_state.abex_per_well_input, key="abex_per_well_input", width=160)
+        d_opab = st.session_state.defaults["development"]["opex_abex"]
+        a_val = d_opab["abex_fpso_fpso"] if dev_case == "FPSO_case" else d_opab["abex_fpso_tieback"]
+        abex_fpso = st.number_input("ABEX FPSO", value=a_val, key="abex_fpso_input", width=160)
 
 # Pack parameters using the granular format
 dev_param = {dev_case: {
