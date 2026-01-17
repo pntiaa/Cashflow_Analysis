@@ -216,39 +216,46 @@ if st.session_state.get('last_cf_result'):
     st.subheader("Cost Profile")
     st.plotly_chart(plot_cost_profile(dev_obj), width='stretch')
 
+    # Detailed Results Expander
+    # with st.expander("📄 Detailed Annual Cash Flow Table"):
+    st.subheader("📄 Detailed Annual Cash Flow Table")
+    years = cf.all_years
+    detail_df = cf.get_annual_cash_flow_table()
+    st.dataframe(detail_df.style.format("{:.2f}"))
+
+    # Detailed Results Expander
+    # with st.expander("📄 Detailed Annual Cash Flow Table"):
+        # years = cf.all_years
+        # detail_df = pd.DataFrame({
+        #     'Year': years,
+        #     'Oil Price': [cf.oil_price_by_year.get(y,0.0) for y in years],
+        #     'Gas Price': [cf.gas_price_by_year.get(y,0.0) for y in years],
+        #     'Oil Production': [cf.annual_oil_production.get(y,0.0) for y in years],
+        #     'Gas Production': [cf.annual_gas_production.get(y,0.0) for y in years],
+        #     'Revenue': [cf.annual_revenue.get(y,0.0) for y in years],
+        #     'R-factor': [cf.annual_r_factor.get(y,0.0) for y in years],
+        #     'Royalty': [cf.annual_royalty.get(y,0.0) for y in years],
+        #     'CAPEX_inflated': [cf.annual_capex_inflated.get(y,0.0) for y in years],
+        #     'OPEX_inflated': [cf.annual_opex_inflated.get(y,0.0) for y in years],
+        #     'ABEX_inflated': [cf.annual_abex_inflated.get(y,0.0) for y in years],
+        #     'Cum_CAPEX': [cf.annual_cum_capex_inflated.get(y,0.0) for y in years],
+        #     'Cum_OPEX': [cf.annual_cum_opex_inflated.get(y,0.0) for y in years],
+        #     'Cum_ABEX': [cf.annual_cum_abex_inflated.get(y,0.0) for y in years],
+        #     'Taxable_income': [cf.taxable_income.get(y,0.0) for y in years],
+        #     'Loss_carryforward': [cf.loss_carryforward.get(y,0.0) for y in years],
+        #     'Income_Tax': [cf.corporate_income_tax.get(y,0.0) for y in years],
+        #     'Investment Exemption': [cf.annual_investment_exemption.get(y,0.0) for y in years],
+        #     'Rural Development Tax': [cf.annual_rural_development_tax.get(y,0.0) for y in years],
+        #     'Total_Tax': [cf.annual_total_tax.get(y,0.0) for y in years],
+        #     'Other_fees': [cf.other_fees.get(y,0.0) for y in years],
+        #     'NCF': [cf.annual_net_cash_flow.get(y,0.0) for y in years],
+        #     'Cum_CF': [cf.cumulative_cash_flow.get(y,0.0) for y in years],
+        # })
+        # st.dataframe(detail_df.style.format("{:.2f}"))
+
     with st.expander("🔗 Cash Flow - Sankey Diagram"):
         st.plotly_chart(plot_cf_sankey_chart(cf, height=700), width='stretch')
-    
-    # Detailed Results Expander
-    with st.expander("📄 Detailed Annual Cash Flow Table"):
-        years = cf.all_years
-        detail_df = pd.DataFrame({
-            'Year': years,
-            'Oil Price': [cf.oil_price_by_year.get(y,0.0) for y in years],
-            'Gas Price': [cf.gas_price_by_year.get(y,0.0) for y in years],
-            'Oil Production': [cf.annual_oil_production.get(y,0.0) for y in years],
-            'Gas Production': [cf.annual_gas_production.get(y,0.0) for y in years],
-            'Revenue': [cf.annual_revenue.get(y,0.0) for y in years],
-            'R-factor': [cf.annual_r_factor.get(y,0.0) for y in years],
-            'Royalty': [cf.annual_royalty.get(y,0.0) for y in years],
-            'CAPEX_inflated': [cf.annual_capex_inflated.get(y,0.0) for y in years],
-            'OPEX_inflated': [cf.annual_opex_inflated.get(y,0.0) for y in years],
-            'ABEX_inflated': [cf.annual_abex_inflated.get(y,0.0) for y in years],
-            'Cum_CAPEX': [cf.annual_cum_capex_inflated.get(y,0.0) for y in years],
-            'Cum_OPEX': [cf.annual_cum_opex_inflated.get(y,0.0) for y in years],
-            'Cum_ABEX': [cf.annual_cum_abex_inflated.get(y,0.0) for y in years],
-            'Taxable_income': [cf.taxable_income.get(y,0.0) for y in years],
-            'Loss_carryforward': [cf.loss_carryforward.get(y,0.0) for y in years],
-            'Income_Tax': [cf.corporate_income_tax.get(y,0.0) for y in years],
-            'Investment Exemption': [cf.annual_investment_exemption.get(y,0.0) for y in years],
-            'Rural Development Tax': [cf.annual_rural_development_tax.get(y,0.0) for y in years],
-            'Total_Tax': [cf.annual_total_tax.get(y,0.0) for y in years],
-            'Other_fees': [cf.other_fees.get(y,0.0) for y in years],
-            'NCF': [cf.annual_net_cash_flow.get(y,0.0) for y in years],
-            'Cum_CF': [cf.cumulative_cash_flow.get(y,0.0) for y in years],
-        })
-        st.dataframe(detail_df.style.format("{:.2f}"))
-    
+
     # --- Save Result to JSON ---
     from utils import save_project
     st.divider()

@@ -360,7 +360,7 @@ class CashFlowKOR(BaseModel):
         기본공제금액(A) : 해당 과세연도에 투자한 금액에 다음의 구분에 따른 비율을 곱한 금액에 상당하는 금액. 해당 프로젝트는 100분의 1
         추가공제금액(B) : 해당 과세연도에 투자한 금액이 해당 과세연도의 직전 3년간 연평균 투자 또는 취득금액을 초과하는 경우에는 그 초과하는 금액의 100분의 10에 상당하는 금액
         통합투자세액공제 대상자산 : 감가상각대상자산 - (Pipeline CAPEX + Pipeline Acquisition Tax + Pre-sanction Cost + PM & Other CAPEX)
-        
+        다만, 추가공제 금액이 기본공제 금액을 초과하는 경우에는 기본공제 금액의 2배를 한도로 함.
         '''
         self._build_full_timeline()
         years = self.all_years
@@ -402,7 +402,7 @@ class CashFlowKOR(BaseModel):
             else:
                 B = 0.0
                 
-            exemption[y] = A + B
+            exemption[y] = A + min(2*A, B)
             
         self.annual_investment_exemption = exemption
         return exemption
@@ -779,27 +779,29 @@ class CashFlowKOR(BaseModel):
             
             # 법인세 계산
             corp_tax = self._calculate_CIT(taxable)
-
             # 지방세 포함 여부
             if local_tax:
                 corp_tax *= 1.1
-            
+            self.corporate_income_tax[y] = corp_tax
+
             # 세액 공제 적용 (통합투자세액공제)
             exemption = 0.0
             if investment_exemption:
                 if not self.annual_investment_exemption:
                     self._calculate_exemption()
                 exemption = self.annual_investment_exemption.get(y, 0.0)
+                print(f"[Tax] Investment Exemption: {exemption:.2f} MM$")
 
-            final_tax = max(0, corp_tax - exemption)
-            self.corporate_income_tax[y] = final_tax
+            tax_after_exemption = max(0, corp_tax - exemption)
             
             # 농어촌특별세 (Rural Development Tax) 계산: 감면받은 세액이 있는 경우에만 부과
             rd_tax = 0.0
-            if exemption > 0:
+            if tax_after_exemption > 0:
+                self._calculate_rural_development_tax()
                 rd_tax = self.annual_rural_development_tax.get(y, 0.0)
+                print(f"[Tax] Rural Development Tax: {rd_tax:.2f} MM$")
             
-            self.annual_total_tax[y] = final_tax + rd_tax
+            self.annual_total_tax[y] = tax_after_exemption + rd_tax
         
         self.total_tax = sum(self.annual_total_tax.values())
         
@@ -926,12 +928,12 @@ class CashFlowKOR(BaseModel):
             'final_cumulative': self.cumulative_cash_flow.get(self.all_years[-1], 0.0) if self.all_years else 0.0
         }
 
-    def to_df(self, capex_detail=True, tax_detail=True):
+    def get_annual_cash_flow_table(self, capex_detail=True, tax_detail=True):
         # 1. 컬럼 데이터 구성
         cols = [
             self.annual_oil_production, self.oil_price_by_year, 
             self.annual_gas_production, self.gas_price_by_year, 
-            self.annual_revenue, self.annual_royalty, self.annual_high_price_royalty,
+            self.annual_revenue, self.annual_r_factor, self.annual_royalty, self.annual_high_price_royalty,
             self.annual_capex_inflated, 
         ]
         
@@ -939,7 +941,7 @@ class CashFlowKOR(BaseModel):
         idx = [
             '석유 (MMbbl)', '유가 ($/bbl)', 
             '가스 (BCF)', '가스가 ($/mcf)', 
-            '수익 (MM$)', '조광료 (MM$)', '고유가 추가 조광료 (MM$)',
+            '매출액 (MM$)', 'R-Factor', '조광료 (MM$)', '고유가 추가 조광료 (MM$)',
             'CAPEX (MM$)',
         ]
 
@@ -970,7 +972,7 @@ class CashFlowKOR(BaseModel):
                 (self.corporate_income_tax, '법인세 (MM$)'),
                 (self.loss_carryforward, '이월결손금 공제 (MM$)'),
                 (self.annual_investment_exemption, '투자세액감면 (MM$)'),
-                (self.rural_development_tax, '농어촌특별세 (MM$)')
+                (self.annual_rural_development_tax, '농어촌특별세 (MM$)')
             ]
             for data, label in tax_cols:
                 cols.append(data)
@@ -982,8 +984,11 @@ class CashFlowKOR(BaseModel):
         idx.append('NCF (MM$)')
 
         df = pd.DataFrame(cols, index=idx)
+        df = df.reindex(sorted(df.columns), axis=1)
+        # NCF (MM$) 행의 값이 0이거나 NaN인 컬럼 제거
+        df = df.loc[:, (df.loc['NCF (MM$)'] != 0) & (df.loc['NCF (MM$)'].notna())]
         df.insert(0, 'Total', df.sum(axis=1))
-        return df.dropna(axis=1, how='any')
+        return df
 
 # ---------------------------
 # Multi-Company Configuration
