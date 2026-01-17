@@ -30,6 +30,7 @@ class CashFlowKOR(BaseModel):
     annual_opex_inflated: Dict[int, float] = Field(default_factory=dict)
     annual_abex_inflated: Dict[int, float] = Field(default_factory=dict)
     capex_breakdown: Dict[str, Dict[int, float]] = Field(default_factory=dict)
+    capex_breakdown_inflated: Dict[str, Dict[int, float]] = Field(default_factory=dict)
 
     annual_cum_revenue: Dict[int, float] = Field(default_factory=dict)
     annual_cum_capex_inflated: Dict[int, float] = Field(default_factory=dict)
@@ -37,7 +38,7 @@ class CashFlowKOR(BaseModel):
     annual_cum_abex_inflated: Dict[int, float] = Field(default_factory=dict)
     annual_r_factor: Dict[int, float] = Field(default_factory=dict)
     annual_royalty: Dict[int, float] = Field(default_factory=dict)
-    annual_highprice_royalty: Dict[int, float] = Field(default_factory=dict)
+    annual_high_price_royalty: Dict[int, float] = Field(default_factory=dict)
 
     # 생산량
     oil_production_series: Optional[Any] = None
@@ -188,10 +189,18 @@ class CashFlowKOR(BaseModel):
             years = np.array(self.cost_years)
             years_from_start = years - years[0]
             inf = ((1.0 + self.cost_inflation_rate) ** years_from_start)
+            # breakdown inflation 초기화
+            self.capex_breakdown_inflated = {k: {} for k in self.capex_breakdown.keys()}
+
             for i, y in enumerate(years):
                 self.annual_capex_inflated[y] = self.annual_capex.get(y, 0.0) * inf[i]
                 self.annual_opex_inflated[y] = self.annual_opex.get(y, 0.0) * inf[i]
                 self.annual_abex_inflated[y] = self.annual_abex.get(y, 0.0) * inf[i]
+                
+                # 각 breakdown 요소에 inflation 적용
+                for k, component_dict in self.capex_breakdown.items():
+                    if isinstance(component_dict, dict):
+                        self.capex_breakdown_inflated[k][y] = component_dict.get(y, 0.0) * inf[i]
 
             cum_capex_inflated = np.cumsum([self.annual_capex_inflated.get(y, 0.0) for y in self.cost_years])
             cum_opex_inflated = np.cumsum([self.annual_opex_inflated.get(y, 0.0) for y in self.cost_years])
@@ -358,7 +367,7 @@ class CashFlowKOR(BaseModel):
         exemption = {y: 0.0 for y in years}
         
         # 대상 자산 산출을 위한 breakdown 확인
-        breakdown = self.capex_breakdown
+        breakdown = self.capex_breakdown_inflated
         # 대상 자산 = drilling + subsea + FPSO + terminal
         # (Pipeline CAPEX, Study costs, PM/Others 제외)
         target_keys = ['drilling', 'subsea', 'FPSO', 'terminal']
@@ -451,9 +460,9 @@ class CashFlowKOR(BaseModel):
             if avg_gas_prev > 0 and gas_price_y >= (avg_gas_prev * 1.2):
                 gas_vol = self.annual_gas_production.get(y, 0.0)
                 additional_royalty += (gas_price_y - avg_gas_prev * 1.2) * gas_vol * 0.33
-            self.annual_highprice_royalty[y] = additional_royalty
+            self.annual_high_price_royalty[y] = additional_royalty
         
-        return self.annual_highprice_royalty
+        return self.annual_high_price_royalty
         
     def determine_cop_year(self, output=False):
         """
@@ -781,7 +790,7 @@ class CashFlowKOR(BaseModel):
                 if not self.annual_investment_exemption:
                     self._calculate_exemption()
                 exemption = self.annual_investment_exemption.get(y, 0.0)
-                
+
             final_tax = max(0, corp_tax - exemption)
             self.corporate_income_tax[y] = final_tax
             
@@ -832,7 +841,7 @@ class CashFlowKOR(BaseModel):
         for y in years:
             rev = self.annual_revenue.get(y, 0.0)
             royalty = self.annual_royalty.get(y, 0.0)
-            high_price_royalty = self.annual_highprice_royalty.get(y, 0.0)
+            high_price_royalty = self.annual_high_price_royalty.get(y, 0.0)
             capex = self.annual_capex_inflated.get(y, 0.0)
             opex = self.annual_opex_inflated.get(y, 0.0)
             abex = self.annual_abex_inflated.get(y, 0.0)
@@ -917,25 +926,61 @@ class CashFlowKOR(BaseModel):
             'final_cumulative': self.cumulative_cash_flow.get(self.all_years[-1], 0.0) if self.all_years else 0.0
         }
 
-    def to_df(self):
+    def to_df(self, capex_detail=True, tax_detail=True):
+        # 1. 컬럼 데이터 구성
         cols = [
             self.annual_oil_production, self.oil_price_by_year, 
             self.annual_gas_production, self.gas_price_by_year, 
-            self.annual_revenue, self.annual_royalty, 
-            self.annual_capex_inflated, self.annual_opex_inflated, 
-            self.annual_abex_inflated, self.other_fees, 
-            self.corporate_income_tax,
-            self.annual_total_tax,  
-            self.annual_net_cash_flow
+            self.annual_revenue, self.annual_royalty, self.annual_high_price_royalty,
+            self.annual_capex_inflated, 
         ]
+        
+        # 2. 인덱스 구성
         idx = [
             '석유 (MMbbl)', '유가 ($/bbl)', 
             '가스 (BCF)', '가스가 ($/mcf)', 
-            '수익 (MM$)', '조광료 (MM$)', 
-            'CAPEX (MM$)', 'OPEX (MM$)', 
-            'ABEX (MM$)', 'Others (MM$)', 
-            '법인세 (MM$)', 'NCF (MM$)'
+            '수익 (MM$)', '조광료 (MM$)', '고유가 추가 조광료 (MM$)',
+            'CAPEX (MM$)',
+        ]
+
+        if capex_detail:
+            # Inflated breakdown을 사용
+            breakdown_keys = [
+                ('exploration', 'CAPEX - 탐사비 (MM$)'),
+                ('drilling', 'CAPEX - 시추비 (MM$)'),
+                ('subsea', 'CAPEX - 해저설비 (MM$)'),
+                ('FPSO', 'CAPEX - FPSO (MM$)'),
+                ('export_pipeline', 'CAPEX - Pipeline (MM$)'),
+                ('terminal', 'CAPEX - Terminal (MM$)'),
+                ('PM_others', 'CAPEX - PM/기타 (MM$)')
             ]
+            for key, label in breakdown_keys:
+                cols.append(self.capex_breakdown_inflated.get(key, {}))
+                idx.append(label)
+
+        cols.append(self.annual_opex_inflated)
+        idx.append('OPEX (MM$)')
+        cols.append(self.annual_abex_inflated)
+        idx.append('ABEX (MM$)')
+        cols.append(self.other_fees)
+        idx.append('기타비용 (MM$)')
+
+        if tax_detail:
+            tax_cols = [
+                (self.corporate_income_tax, '법인세 (MM$)'),
+                (self.loss_carryforward, '이월결손금 공제 (MM$)'),
+                (self.annual_investment_exemption, '투자세액감면 (MM$)'),
+                (self.rural_development_tax, '농어촌특별세 (MM$)')
+            ]
+            for data, label in tax_cols:
+                cols.append(data)
+                idx.append(label)
+
+        cols.append(self.annual_total_tax)
+        idx.append('세금 총액 (MM$)')
+        cols.append(self.annual_net_cash_flow)
+        idx.append('NCF (MM$)')
+
         df = pd.DataFrame(cols, index=idx)
         df.insert(0, 'Total', df.sum(axis=1))
         return df.dropna(axis=1, how='any')
