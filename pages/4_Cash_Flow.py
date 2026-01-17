@@ -128,16 +128,18 @@ if run_button:
     cop_adjustments = cf.apply_cop_adjustments(output=False)
     # Step 4: 조정된 값으로 조광료 재계산
     cf.calculate_royalty(output=False)
+    cf.calculate_high_price_royalty(output=False)
     # Step 5: 감가상각 계산
-    cf.calculate_depreciation(method='unit_of_production', useful_life=useful_life, output=False)
+    cf.calculate_depreciation(method=depreciation_method.lower().replace(" ", "_"), useful_life=useful_life, output=False)
     # Step 6: 조정된 값으로 세금 재계산
-    cf.calculate_taxes(output=False)
+    cf.calculate_taxes(investment_exemption=True, local_tax=True, output=False)
     # Step 7: 최종 현금흐름 계산
     cf.calculate_net_cash_flow(output=False)
     # Step 8: NPV 계산
     cf.calculate_npv(output=False)
-
-    # st.success("✅ Cash flow calculation complete!")
+    # Step 9: IRR 계산
+    # cf.calculate_irr()
+    st.success("✅ Cash flow calculation complete!")
     
     # Store result in session state
     st.session_state.last_cf_result = {
@@ -237,7 +239,10 @@ if st.session_state.get('last_cf_result'):
             'Cum_ABEX': [cf.annual_cum_abex_inflated.get(y,0.0) for y in years],
             'Taxable_income': [cf.taxable_income.get(y,0.0) for y in years],
             'Loss_carryforward': [cf.loss_carryforward.get(y,0.0) for y in years],
-            'Income_Tax': [cf.annual_total_tax.get(y,0.0) for y in years],
+            'Income_Tax': [cf.corporate_income_tax.get(y,0.0) for y in years],
+            'Investment Exemption': [cf.annual_investment_exemption.get(y,0.0) for y in years],
+            'Rural Development Tax': [cf.annual_rural_development_tax.get(y,0.0) for y in years],
+            'Total_Tax': [cf.annual_total_tax.get(y,0.0) for y in years],
             'Other_fees': [cf.other_fees.get(y,0.0) for y in years],
             'NCF': [cf.annual_net_cash_flow.get(y,0.0) for y in years],
             'Cum_CF': [cf.cumulative_cash_flow.get(y,0.0) for y in years],

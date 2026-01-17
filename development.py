@@ -329,7 +329,7 @@ class DevelopmentCost:
         self.terminal_cost = self._calculate_spread_cost('terminal_cost', base_offset, base_duration)
         # PM & others 비용은 시추공당 비용으로 계산됨
         pm_cost = float(self.case_param.get('PM_others_cost', 0.0))
-        self.PM_others_costs = {y: int(self.yearly_drilling_schedule.get(y, 0)) * pm_cost for y in self.cost_years}
+        self.PM_others_cost = {y: int(self.yearly_drilling_schedule.get(y, 0)) * pm_cost for y in self.cost_years}
 
         # Merge years
         all_fac_years = set()

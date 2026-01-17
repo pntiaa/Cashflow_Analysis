@@ -37,6 +37,7 @@ class CashFlowKOR(BaseModel):
     annual_cum_abex_inflated: Dict[int, float] = Field(default_factory=dict)
     annual_r_factor: Dict[int, float] = Field(default_factory=dict)
     annual_royalty: Dict[int, float] = Field(default_factory=dict)
+    annual_highprice_royalty: Dict[int, float] = Field(default_factory=dict)
 
     # 생산량
     oil_production_series: Optional[Any] = None
@@ -66,6 +67,8 @@ class CashFlowKOR(BaseModel):
     corporate_income_tax: Dict[int, float] = Field(default_factory=dict)
     other_fees: Dict[int, float] = Field(default_factory=dict)  # 공유수면점사용료, 교육훈련비
     annual_total_tax: Dict[int, float] = Field(default_factory=dict)
+    annual_investment_exemption: Dict[int, float] = Field(default_factory=dict)
+    annual_rural_development_tax: Dict[int, float] = Field(default_factory=dict)
     annual_net_cash_flow: Dict[int, float] = Field(default_factory=dict)
     cumulative_cash_flow: Dict[int, float] = Field(default_factory=dict)
 
@@ -303,17 +306,38 @@ class CashFlowKOR(BaseModel):
         for i, y in enumerate(self.all_years):
             self.annual_cum_revenue[y] = cumulative_revenue_array[i]
         return self.annual_revenue
+    # ---------------------------
+    # 기타 비용
+    # ---------------------------
+    def calculate_annual_other_cost(self):
+        '''
+        공유수면 점사용료(public water occupacy or usage fee) : 매년 정해진 금액을 지출, 100만불
+        교육훈련비(training cost) : 매년 정해진 금액을 지출, 25만불
+        '''
+        self._build_full_timeline()
+        years = self.all_years
+        self.annual_other_cost = {y: 0.0 for y in years}
+
+        for y in years:
+            self.annual_other_cost[y] = 100 + 25
+        return self.annual_other_cost
 
     # ---------------------------
     # 세금
-    # ---------------------------
+    # ---------------------------   
     def _calculate_CIT(self, taxable_income: float)->float:
+        '''
+        Corporate Income Tax (CIT) 계산
+        백만불(MM$) / 환율(MM$/KRW) => 백만원 / 10 => 천만원 단위로 계산
+        지방세 = 법인세 * 10% 는 Total Tax 계산시에 반영
+        '''
         taxable_income_krw = taxable_income * self.exchange_rate / 10
-        if taxable_income_krw > 30000: CIT_krw = (6268 + (taxable_income_krw - 30000) * 0.24) * 1.1
-        elif taxable_income_krw > 2000: CIT_krw = (378 + (taxable_income_krw - 2000) * 0.21) * 1.1
-        elif taxable_income_krw > 20: CIT_krw = (1.8 + (taxable_income_krw - 2) * 0.19) * 1.1
-        elif taxable_income_krw > 0: CIT_krw = (taxable_income_krw * 0.09) * 1.1
+        if taxable_income_krw > 30000: CIT_krw = (6268 + (taxable_income_krw - 30000) * 0.24)
+        elif taxable_income_krw > 2000: CIT_krw = (378 + (taxable_income_krw - 2000) * 0.21)
+        elif taxable_income_krw > 20: CIT_krw = (1.8 + (taxable_income_krw - 2) * 0.19)
+        elif taxable_income_krw > 0: CIT_krw = (taxable_income_krw * 0.09)
         else: return 0.0
+
         return CIT_krw / self.exchange_rate * 10
 
     def _calculate_royalty_rates(self, r_factor:float):
@@ -321,9 +345,119 @@ class CashFlowKOR(BaseModel):
         elif r_factor < 3: return round(((18.28 * (r_factor-1.25)) + 1)/100,2)
         else: return 0.33
 
+    def _calculate_exemption(self):
+        '''
+        투자촉진을 위한 조세특례(통합투자세액공제)
+        기본공제금액(A) : 해당 과세연도에 투자한 금액에 다음의 구분에 따른 비율을 곱한 금액에 상당하는 금액. 해당 프로젝트는 100분의 1
+        추가공제금액(B) : 해당 과세연도에 투자한 금액이 해당 과세연도의 직전 3년간 연평균 투자 또는 취득금액을 초과하는 경우에는 그 초과하는 금액의 100분의 10에 상당하는 금액
+        통합투자세액공제 대상자산 : 감가상각대상자산 - (Pipeline CAPEX + Pipeline Acquisition Tax + Pre-sanction Cost + PM & Other CAPEX)
+        
+        '''
+        self._build_full_timeline()
+        years = self.all_years
+        exemption = {y: 0.0 for y in years}
+        
+        # 대상 자산 산출을 위한 breakdown 확인
+        breakdown = self.capex_breakdown
+        # 대상 자산 = drilling + subsea + FPSO + terminal
+        # (Pipeline CAPEX, Study costs, PM/Others 제외)
+        target_keys = ['drilling', 'subsea', 'FPSO', 'terminal']
+        
+        target_investment = {y: 0.0 for y in years}
+        for y in years:
+            inv_y = 0.0
+            for k in target_keys:
+                val = breakdown.get(k, {})
+                if isinstance(val, dict):
+                    inv_y += val.get(y, 0.0)
+                elif isinstance(val, (int, float)) and y == self.cost_years[0]: # dict가 아니면 첫해에 몰려있다고 가정 (보통 dict임)
+                    inv_y += float(val)
+            target_investment[y] = inv_y
+
+        for i, y in enumerate(years):
+            # 기본공제 (A): 1%
+            A = target_investment[y] * 0.01
+            
+            # 추가공제 (B): 직전 3개년 평균 초과분의 10%
+            # i=0: 직전 3개년 없음 (0)
+            # i=1: 직전 1개년
+            # i=2: 직전 2개년
+            # i>=3: 직전 3개년
+            prev_investments = []
+            for j in range(max(0, i-3), i):
+                prev_investments.append(target_investment[years[j]])
+            
+            if prev_investments:
+                avg_prev = sum(prev_investments) / len(prev_investments)
+                B = max(0, (target_investment[y] - avg_prev) * 0.10)
+            else:
+                B = 0.0
+                
+            exemption[y] = A + B
+            
+        self.annual_investment_exemption = exemption
+        return exemption
+
+    def _calculate_rural_development_tax(self):
+        '''
+        Rural Development Tax(농어촌특별세) 계산 
+        통합투자세액공제에 부과되며, 감면받은 세액의 20% 부과
+        '''
+        self._build_full_timeline()
+        years = self.all_years
+
+        for y in years:
+            exemption = self.annual_investment_exemption.get(y, 0.0)
+            self.annual_rural_development_tax[y] = exemption * 0.20
+        
+        return self.annual_rural_development_tax
+
+    def calculate_high_price_royalty(self, output=False):
+        '''
+        High Price Royalty(고유가 추가 조광료):
+        아래의 조건이 모두 충족할 경우에 부과
+        1. 원유 또는 천연가스의 평균 판매가격이 직전 5개년도 평균 판매가격 대비 20% 이상 높고,
+        2. 원유가격이 배럴당 85불 이상일 경우
+        [추가 조광료 = (부과대상연도의 판매가격 - 직전 5년 평균 판매가격 * 1.2) * 판매량 * 33%]
+        '''
+        if not self.annual_revenue:
+            raise ValueError("수익을 먼저 계산해야 합니다")
+        self._build_full_timeline()
+
+        for y in self.all_years:
+            oil_price_y = self.oil_price_by_year.get(y, 0.0)
+            gas_price_y = self.gas_price_by_year.get(y, 0.0)
+
+            # 2번 조건: 원유가격이 배럴당 85불 이상
+            if oil_price_y < 85.0:
+                continue
+
+            # 직전 5개년도 평균 가격 계산
+            prev_5_years = range(y - 5, y)
+            oil_prices_prev = [self.oil_price_by_year.get(y, 0.0) for y in prev_5_years]
+            gas_prices_prev = [self.gas_price_by_year.get(y, 0.0) for y in prev_5_years]
+
+            avg_oil_prev = sum(oil_prices_prev) / 5 if oil_prices_prev else 0.0
+            avg_gas_prev = sum(gas_prices_prev) / 5 if gas_prices_prev else 0.0
+
+            additional_royalty = 0.0
+
+            # 원유 추가 조광료 계산
+            if avg_oil_prev > 0 and oil_price_y >= (avg_oil_prev * 1.2):
+                oil_vol = self.annual_oil_production.get(y, 0.0)
+                additional_royalty += (oil_price_y - avg_oil_prev * 1.2) * oil_vol * 0.33
+
+            # 천연가스 추가 조광료 계산
+            if avg_gas_prev > 0 and gas_price_y >= (avg_gas_prev * 1.2):
+                gas_vol = self.annual_gas_production.get(y, 0.0)
+                additional_royalty += (gas_price_y - avg_gas_prev * 1.2) * gas_vol * 0.33
+            self.annual_highprice_royalty[y] = additional_royalty
+        
+        return self.annual_highprice_royalty
+        
     def determine_cop_year(self, output=False):
         """
-        COP 연도 결정: Revenue < OPEX 인 첫 번째 연도
+        COP 연도 결정: Revenue < (OPEX + Royalty) 인 첫 번째 연도
         """
         self._build_full_timeline()
         if not self.annual_revenue:
@@ -331,17 +465,34 @@ class CashFlowKOR(BaseModel):
         
         cop_year = self.all_years[-1]  # 기본값: 마지막 연도
         
+        # Royalty 계산을 위한 누적 변수
+        cum_royalty_temp = 0.0
+        
         for y in self.all_years:
             if y >= (self.production_start_year or 0):
                 revenue_y = self.annual_revenue.get(y, 0.0)
                 opex_y = self.annual_opex_inflated.get(y, 0.0)
                 
-                # OPEX가 존재하고, 수익이 OPEX보다 작으면 생산 중단
-                if opex_y > 0 and revenue_y < opex_y:
+                # Royalty 실시간 계산 (R-factor 기반)
+                # Note: COP 결정용이므로 COP 적용 전의 누적 비용/수익 사용
+                denom = (self.annual_cum_capex_inflated.get(y, 0.0) 
+                        + self.annual_cum_opex_inflated.get(y, 0.0) 
+                        + self.annual_cum_abex_inflated.get(y, 0.0))
+                
+                cum_rev_after = self.annual_cum_revenue.get(y, 0.0) - cum_royalty_temp
+                r_factor_y = cum_rev_after / denom if denom != 0 else 0.0
+                rate_y = self._calculate_royalty_rates(r_factor_y)
+                royalty_y = revenue_y * rate_y
+                
+                # OPEX가 존재하고, 수익이 (OPEX + Royalty)보다 작으면 생산 중단
+                if opex_y > 0 and revenue_y < (opex_y + royalty_y):
                     cop_year = y
                     if output:
-                        print(f"[COP] Year {y}: Revenue ({revenue_y:.2f}) < OPEX ({opex_y:.2f})")
+                        print(f"[COP] Year {y}: Revenue ({revenue_y:.2f}) < OPEX ({opex_y:.2f}) + Royalty ({royalty_y:.2f})")
                     break
+                
+                # 중단되지 않았다면 누적 Royalty 업데이트
+                cum_royalty_temp += royalty_y
         
         self.cop_year = cop_year
         
@@ -384,8 +535,11 @@ class CashFlowKOR(BaseModel):
         if output:
             print(f"\n[1. Production Adjustment]")
             print(f"  Original Gas: {original_gas_production:.2f} BCF")
+            print(f"  Original Oil: {original_oil_production:.2f} MMbbls")
             print(f"  Actual Gas (to COP): {actual_gas_production:.2f} BCF")
+            print(f"  Actual Oil (to COP): {actual_oil_production:.2f} MMbbls")
             print(f"  Reduction: {original_gas_production - actual_gas_production:.2f} BCF")
+            print(f"  Reduction: {original_oil_production - actual_oil_production:.2f} MMbbls")
         
         # ===== 2. 수익 재계산 (생산량 조정 반영) =====
         for y in years:
@@ -557,7 +711,10 @@ class CashFlowKOR(BaseModel):
         
         return self.annual_royalty
     
-    def calculate_taxes(self, output=False):
+    def calculate_taxes(self, 
+                        investment_exemption: bool = True, # 투자세액감면 대상 여부
+                        local_tax: bool = True, # 지방세 포함 여부
+                        output=False):
         """
         세금 계산 - 반드시 apply_cop_adjustments()와 calculate_royalty() 이후에 호출
         """
@@ -609,10 +766,31 @@ class CashFlowKOR(BaseModel):
                 else:
                     taxable = pre_tax_income
             
-            corp_tax = self._calculate_CIT(taxable)
             self.taxable_income[y] = taxable
-            self.corporate_income_tax[y] = corp_tax
-            self.annual_total_tax[y] = corp_tax
+            
+            # 법인세 계산
+            corp_tax = self._calculate_CIT(taxable)
+
+            # 지방세 포함 여부
+            if local_tax:
+                corp_tax *= 1.1
+            
+            # 세액 공제 적용 (통합투자세액공제)
+            exemption = 0.0
+            if investment_exemption:
+                if not self.annual_investment_exemption:
+                    self._calculate_exemption()
+                exemption = self.annual_investment_exemption.get(y, 0.0)
+                
+            final_tax = max(0, corp_tax - exemption)
+            self.corporate_income_tax[y] = final_tax
+            
+            # 농어촌특별세 (Rural Development Tax) 계산: 감면받은 세액이 있는 경우에만 부과
+            rd_tax = 0.0
+            if exemption > 0:
+                rd_tax = self.annual_rural_development_tax.get(y, 0.0)
+            
+            self.annual_total_tax[y] = final_tax + rd_tax
         
         self.total_tax = sum(self.annual_total_tax.values())
         
@@ -623,15 +801,16 @@ class CashFlowKOR(BaseModel):
     
     def calculate_net_cash_flow(self, discovery_bonus: Optional[float] = None, output=False):
         """
-        최종 현금흐름 계산 - 모든 조정이 완료된 후 단순 집계만 수행
-        반드시 다음 순서로 호출되어야 함:
-        1. calculate_annual_revenue()
-        2. determine_cop_year()
-        3. apply_cop_adjustments()
-        4. calculate_royalty()
-        5. calculate_depreciation()
-        6. calculate_taxes()
-        7. calculate_net_cash_flow() ← 여기
+            최종 현금흐름 계산 - 모든 조정이 완료된 후 단순 집계만 수행
+            반드시 다음 순서로 호출되어야 함:
+            1. calculate_annual_revenue()
+            2. determine_cop_year() - cop 결정시 royalty 계산이 필요하나, 함수 내에 이를 포함함.
+            3. apply_cop_adjustments()
+            4. calculate_royalty()
+            5. calculate_high_price_royalty()
+            6. calculate_depreciation()
+            7. calculate_taxes()
+            8. calculate_net_cash_flow() ← 여기
         """
         self._build_full_timeline()
         
@@ -653,6 +832,7 @@ class CashFlowKOR(BaseModel):
         for y in years:
             rev = self.annual_revenue.get(y, 0.0)
             royalty = self.annual_royalty.get(y, 0.0)
+            high_price_royalty = self.annual_highprice_royalty.get(y, 0.0)
             capex = self.annual_capex_inflated.get(y, 0.0)
             opex = self.annual_opex_inflated.get(y, 0.0)
             abex = self.annual_abex_inflated.get(y, 0.0)
@@ -664,8 +844,8 @@ class CashFlowKOR(BaseModel):
             if discovery_bonus and y == self.production_start_year:
                 bonus = discovery_bonus
             
-            # NCF = Revenue - Royalty - (CAPEX + OPEX + ABEX + Other) - Tax
-            ncf = rev - royalty - (capex + opex + abex + bonus + other) - tax
+            # NCF = Revenue - Royalty - High Price Royalty - (CAPEX + OPEX + ABEX + Other) - Tax
+            ncf = rev - royalty - high_price_royalty - (capex + opex + abex + bonus + other) - tax
             
             self.annual_net_cash_flow[y] = ncf
             cum_ncf += ncf
@@ -738,8 +918,24 @@ class CashFlowKOR(BaseModel):
         }
 
     def to_df(self):
-        cols = [self.annual_oil_production, self.oil_price_by_year, self.annual_gas_production, self.gas_price_by_year, self.annual_revenue, self.annual_royalty, self.annual_capex_inflated, self.annual_opex_inflated, self.annual_abex_inflated, self.other_fees, self.corporate_income_tax, self.annual_net_cash_flow]
-        idx = ['석유 (MMbbl)', '유가 ($/bbl)', '가스 (BCF)', '가스가 ($/mcf)', '수익 (MM$)', '조광료 (MM$)', 'CAPEX (MM$)', 'OPEX (MM$)', 'ABEX (MM$)', 'Others (MM$)', '법인세 (MM$)', 'NCF (MM$)']
+        cols = [
+            self.annual_oil_production, self.oil_price_by_year, 
+            self.annual_gas_production, self.gas_price_by_year, 
+            self.annual_revenue, self.annual_royalty, 
+            self.annual_capex_inflated, self.annual_opex_inflated, 
+            self.annual_abex_inflated, self.other_fees, 
+            self.corporate_income_tax,
+            self.annual_total_tax,  
+            self.annual_net_cash_flow
+        ]
+        idx = [
+            '석유 (MMbbl)', '유가 ($/bbl)', 
+            '가스 (BCF)', '가스가 ($/mcf)', 
+            '수익 (MM$)', '조광료 (MM$)', 
+            'CAPEX (MM$)', 'OPEX (MM$)', 
+            'ABEX (MM$)', 'Others (MM$)', 
+            '법인세 (MM$)', 'NCF (MM$)'
+            ]
         df = pd.DataFrame(cols, index=idx)
         df.insert(0, 'Total', df.sum(axis=1))
         return df.dropna(axis=1, how='any')

@@ -200,7 +200,20 @@ with col_c2:
                 "cost_summary": {
                     "total_capex": dev.total_capex,
                     "total_opex": dev.total_opex,
-                    "total_abex": dev.total_abex
+                    "total_abex": dev.total_abex,
+                    "capex_breakdown": {
+                        "exploration": dev.exploration_costs,
+                        "drilling": dev.drilling_costs,
+                        "subsea": dev.subsea_costs,
+                        "feasibility_study": dev.feasability_study_cost,
+                        "concept_study": dev.concept_study_cost,
+                        "FEED": dev.FEED_cost,
+                        "EIA": dev.EIA_cost,
+                        "FPSO": dev.FPSO_cost,
+                        "export_pipeline": dev.export_pipeline_cost,
+                        "terminal": dev.terminal_cost,
+                        "PM_others": dev.PM_others_cost
+                    }
                 },
                 "profiles": {
                     "gas": dict(zip(st.session_state.prod_data['Year'], st.session_state.prod_data['Gas Production (BCF/y)'])),
