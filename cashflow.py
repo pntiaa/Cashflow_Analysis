@@ -68,7 +68,7 @@ class CashFlowKOR(BaseModel):
     corporate_income_tax: Dict[int, float] = Field(default_factory=dict)
     other_fees: Dict[int, float] = Field(default_factory=dict)  # 공유수면점사용료, 교육훈련비
     annual_total_tax: Dict[int, float] = Field(default_factory=dict)
-    annual_investment_exemption: Dict[int, float] = Field(default_factory=dict)
+    annual_investment_tax_credit: Dict[int, float] = Field(default_factory=dict)
     annual_rural_development_tax: Dict[int, float] = Field(default_factory=dict)
     annual_net_cash_flow: Dict[int, float] = Field(default_factory=dict)
     cumulative_cash_flow: Dict[int, float] = Field(default_factory=dict)
@@ -354,17 +354,23 @@ class CashFlowKOR(BaseModel):
         elif r_factor < 3: return round(((18.28 * (r_factor-1.25)) + 1)/100,2)
         else: return 0.33
 
-    def _calculate_exemption(self):
+    def _calculate_investment_tax_credit(self):
         '''
-        투자촉진을 위한 조세특례(통합투자세액공제)
+        조세특례제한법 제24조 - 통합투자세액공제(Integrated Investment Tax Credit)
+        Investment Tax Credit (ITC) Carryforward
         기본공제금액(A) : 해당 과세연도에 투자한 금액에 다음의 구분에 따른 비율을 곱한 금액에 상당하는 금액. 해당 프로젝트는 100분의 1
         추가공제금액(B) : 해당 과세연도에 투자한 금액이 해당 과세연도의 직전 3년간 연평균 투자 또는 취득금액을 초과하는 경우에는 그 초과하는 금액의 100분의 10에 상당하는 금액
         통합투자세액공제 대상자산 : 감가상각대상자산 - (Pipeline CAPEX + Pipeline Acquisition Tax + Pre-sanction Cost + PM & Other CAPEX)
         다만, 추가공제 금액이 기본공제 금액을 초과하는 경우에는 기본공제 금액의 2배를 한도로 함.
+'
+        조세특례제한법 제144조 제1항
+        조세특례제한법상의 특정 세액공제(제24조 통합투자세액공제 포함)를 적용받을 때, 
+        결손이 발생하여 납부할 세액이 없거나 최저한세 규정에 걸려 해당 연도에 공제받지 못한 금액이 있는 경우, 
+        이를 다음 과세연도 개시일부터 10년 이내에 종료하는 각 과세연도로 이월하여 공제할 수 있습니다.
         '''
         self._build_full_timeline()
         years = self.all_years
-        exemption = {y: 0.0 for y in years}
+        tax_credit = {y: 0.0 for y in years}
         
         # 대상 자산 산출을 위한 breakdown 확인
         breakdown = self.capex_breakdown_inflated
@@ -402,24 +408,10 @@ class CashFlowKOR(BaseModel):
             else:
                 B = 0.0
                 
-            exemption[y] = A + min(2*A, B)
+            tax_credit[y] = A + min(2*A, B)
             
-        self.annual_investment_exemption = exemption
-        return exemption
-
-    def _calculate_rural_development_tax(self):
-        '''
-        Rural Development Tax(농어촌특별세) 계산 
-        통합투자세액공제에 부과되며, 감면받은 세액의 20% 부과
-        '''
-        self._build_full_timeline()
-        years = self.all_years
-
-        for y in years:
-            exemption = self.annual_investment_exemption.get(y, 0.0)
-            self.annual_rural_development_tax[y] = exemption * 0.20
-        
-        return self.annual_rural_development_tax
+        self.annual_investment_tax_credit = tax_credit
+        return tax_credit
 
     def calculate_high_price_royalty(self, output=False):
         '''
@@ -721,7 +713,7 @@ class CashFlowKOR(BaseModel):
         return self.annual_royalty
     
     def calculate_taxes(self, 
-                        investment_exemption: bool = True, # 투자세액감면 대상 여부
+                        investment_tax_credit: bool = True, # 투자세액감면 대상 여부
                         local_tax: bool = True, # 지방세 포함 여부
                         output=False):
         """
@@ -735,12 +727,16 @@ class CashFlowKOR(BaseModel):
             raise ValueError("조광료를 먼저 계산해야 합니다")
         if not self.annual_depreciation:
             self.calculate_depreciation(output=False)
-        
+        if investment_tax_credit:
+            self._calculate_tax_credit()
+
         cop_year = self.cop_year if self.cop_year else self.all_years[-1]
         
-        running_loss = 0.0
+        running_loss = 0.0                  # 이월결손금
         self.loss_carryforward = {}
-        
+        tax_credit_carryforward = 0.0        # 세액공제
+        self.tax_credit_carryforward = {}
+
         for y in self.all_years:
             # COP 이후에는 세금 없음
             if y > cop_year:
@@ -785,23 +781,36 @@ class CashFlowKOR(BaseModel):
             self.corporate_income_tax[y] = corp_tax
 
             # 세액 공제 적용 (통합투자세액공제)
-            exemption = 0.0
-            if investment_exemption:
-                if not self.annual_investment_exemption:
-                    self._calculate_exemption()
-                exemption = self.annual_investment_exemption.get(y, 0.0)
-                print(f"[Tax] Investment Exemption: {exemption:.2f} MM$")
+            tax_credit = 0.0
+            if investment_tax_credit:
+                # 통합투자세액공제 계산
+                tax_credit = self.annual_investment_tax_credit.get(y, 0.0)
+                print(f"[Tax] Investment Tax Credit: {tax_credit:.2f} MM$")
 
-            tax_after_exemption = max(0, corp_tax - exemption)
-            
-            # 농어촌특별세 (Rural Development Tax) 계산: 감면받은 세액이 있는 경우에만 부과
-            rd_tax = 0.0
-            if tax_after_exemption > 0:
-                self._calculate_rural_development_tax()
-                rd_tax = self.annual_rural_development_tax.get(y, 0.0)
-                print(f"[Tax] Rural Development Tax: {rd_tax:.2f} MM$")
-            
-            self.annual_total_tax[y] = tax_after_exemption + rd_tax
+                # 투자세액공제 이월
+                if corp_tax < tax_credit:
+                    tax_credit_carryforward += (tax_credit - corp_tax)
+                    utilized_credit = corp_tax
+                    tax_after_credit = 0
+                elif corp_tax < (tax_credit+tax_credit_carryforward):
+                    tax_credit_carryforward = (tax_credit + tax_credit_carryforward) - corp_tax
+                    utilized_credit = corp_tax
+                    tax_after_credit = 0
+                else:
+                    tax_after_credit = corp_tax - (tax_credit+tax_credit_carryforward)
+                    tax_credit_carryforward = 0
+                    utilized_credit = tax_credit+tax_credit_carryforward
+
+                # 농어촌특별세 (Rural Development Tax) 계산: 
+                # 통합투자세액공제에 부과되며, 감면받은 세액의 20% 부과
+                rd_tax = utilized_credit * 0.2
+                
+                self.annual_rural_development_tax[y] = rd_tax
+                self.tax_credits_carried_forward[y] = tax_credits_carried_forward
+                self.utilized_investment_tax_credit[y] = utilized_credit
+                self.annual_total_tax[y] = tax_after_credit + rd_tax
+            else:
+                self.annual_total_tax[y] = corp_tax
         
         self.total_tax = sum(self.annual_total_tax.values())
         
@@ -885,7 +894,7 @@ class CashFlowKOR(BaseModel):
             print(f"{'='*60}\n")
         
         return self.annual_net_cash_flow
-#=============
+
 
     def calculate_npv(self, discount_rate: Optional[float] = None, output=True):
         if not self.annual_net_cash_flow: self.calculate_net_cash_flow(output=False)
@@ -971,7 +980,9 @@ class CashFlowKOR(BaseModel):
             tax_cols = [
                 (self.corporate_income_tax, '법인세 (MM$)'),
                 (self.loss_carryforward, '이월결손금 공제 (MM$)'),
-                (self.annual_investment_exemption, '투자세액감면 (MM$)'),
+                (self.annual_investment_tax_credit, '투자세액감면 (MM$)'),
+                (self.utilized_investment_tax_credit, '투자세액감면 활용분 (MM$)'),
+                (self.tax_credits_carried_forward, '투자세액감면 이월분 (MM$)'),
                 (self.annual_rural_development_tax, '농어촌특별세 (MM$)')
             ]
             for data, label in tax_cols:
