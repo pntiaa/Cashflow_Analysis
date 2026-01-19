@@ -416,26 +416,6 @@ class DevelopmentCost:
         total_wells = sum(self.yearly_drilling_schedule.values())
         total_abex = abex_per_well * total_wells + abex_FPSO + abex_subsea + abex_onshore + abex_offshore
 
-        # construct year keys (include possible year_0)
-        # dev_years = self.cost_years.copy()
-        # years = dev_years.copy()
-
-        ## 다시 계산해야함. 신규 법령에 따라 ABEX 재계산 필요
-        
-        
-        # # all development years and all production years.
-        # all_project_years = sorted(list(set(years) | set(self.annual_gas_production.keys())))
-        # if all_project_years:
-        #     actual_last_project_year = all_project_years[-1]
-        # else:
-        #     # Fallback if no development or production years for some reason
-        #     actual_last_project_year = self.drill_start_year + total_project_duration_for_abex_calc - 1
-
-        # # Initialize annual_abex for all years up to actual_last_project_year
-        # all_abex_years = sorted(list(set(all_project_years) | set(years)))
-        # annual_abex = {y: 0.0 for y in all_abex_years}
-        # annual_abex[actual_last_project_year] = total_abex
-
         # cost years update
         years = self._build_full_timeline()
         self.cost_years = list(years)

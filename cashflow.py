@@ -69,6 +69,8 @@ class CashFlowKOR(BaseModel):
     other_fees: Dict[int, float] = Field(default_factory=dict)  # 공유수면점사용료, 교육훈련비
     annual_total_tax: Dict[int, float] = Field(default_factory=dict)
     annual_investment_tax_credit: Dict[int, float] = Field(default_factory=dict)
+    tax_credits_carried_forward: Dict[int, float] = Field(default_factory=dict)
+    utilized_tax_credit: Dict[int, float] = Field(default_factory=dict)
     annual_rural_development_tax: Dict[int, float] = Field(default_factory=dict)
     annual_net_cash_flow: Dict[int, float] = Field(default_factory=dict)
     cumulative_cash_flow: Dict[int, float] = Field(default_factory=dict)
@@ -728,14 +730,14 @@ class CashFlowKOR(BaseModel):
         if not self.annual_depreciation:
             self.calculate_depreciation(output=False)
         if investment_tax_credit:
-            self._calculate_tax_credit()
+            self._calculate_investment_tax_credit()
 
         cop_year = self.cop_year if self.cop_year else self.all_years[-1]
         
         running_loss = 0.0                  # 이월결손금
         self.loss_carryforward = {}
-        tax_credit_carryforward = 0.0        # 세액공제
-        self.tax_credit_carryforward = {}
+        tax_credits_carried_forward = 0.0        # 세액공제
+        self.tax_credits_carried_forward = {}
 
         for y in self.all_years:
             # COP 이후에는 세금 없음
@@ -775,6 +777,7 @@ class CashFlowKOR(BaseModel):
             
             # 법인세 계산
             corp_tax = self._calculate_CIT(taxable)
+            
             # 지방세 포함 여부
             if local_tax:
                 corp_tax *= 1.1
@@ -785,30 +788,32 @@ class CashFlowKOR(BaseModel):
             if investment_tax_credit:
                 # 통합투자세액공제 계산
                 tax_credit = self.annual_investment_tax_credit.get(y, 0.0)
-                print(f"[Tax] Investment Tax Credit: {tax_credit:.2f} MM$")
+                tax_credits_carried_forward = self.tax_credits_carried_forward.get(y, 0.0)
 
                 # 투자세액공제 이월
                 if corp_tax < tax_credit:
-                    tax_credit_carryforward += (tax_credit - corp_tax)
+                    tax_credits_carried_forward += (tax_credit - corp_tax)
                     utilized_credit = corp_tax
                     tax_after_credit = 0
-                elif corp_tax < (tax_credit+tax_credit_carryforward):
-                    tax_credit_carryforward = (tax_credit + tax_credit_carryforward) - corp_tax
+                elif corp_tax < (tax_credit+tax_credits_carried_forward):
+                    tax_credits_carried_forward = (tax_credit + tax_credits_carried_forward) - corp_tax
                     utilized_credit = corp_tax
                     tax_after_credit = 0
                 else:
-                    tax_after_credit = corp_tax - (tax_credit+tax_credit_carryforward)
-                    tax_credit_carryforward = 0
-                    utilized_credit = tax_credit+tax_credit_carryforward
+                    # 사용 가능한 모든 공제액(당해연도 + 이월분)을 사용하고도 세금이 남는 경우
+                    total_available = tax_credit + tax_credits_carried_forward
+                    tax_after_credit = corp_tax - total_available
+                    utilized_credit = total_available
+                    tax_credits_carried_forward = 0
 
                 # 농어촌특별세 (Rural Development Tax) 계산: 
                 # 통합투자세액공제에 부과되며, 감면받은 세액의 20% 부과
                 rd_tax = utilized_credit * 0.2
                 
                 self.annual_rural_development_tax[y] = rd_tax
-                self.tax_credits_carried_forward[y] = tax_credits_carried_forward
-                self.utilized_investment_tax_credit[y] = utilized_credit
+                self.utilized_tax_credit[y] = utilized_credit
                 self.annual_total_tax[y] = tax_after_credit + rd_tax
+                self.tax_credits_carried_forward[y+1] = tax_credits_carried_forward
             else:
                 self.annual_total_tax[y] = corp_tax
         
@@ -981,8 +986,8 @@ class CashFlowKOR(BaseModel):
                 (self.corporate_income_tax, '법인세 (MM$)'),
                 (self.loss_carryforward, '이월결손금 공제 (MM$)'),
                 (self.annual_investment_tax_credit, '투자세액감면 (MM$)'),
-                (self.utilized_investment_tax_credit, '투자세액감면 활용분 (MM$)'),
                 (self.tax_credits_carried_forward, '투자세액감면 이월분 (MM$)'),
+                (self.utilized_tax_credit, '투자세액감면 활용분 (MM$)'),
                 (self.annual_rural_development_tax, '농어촌특별세 (MM$)')
             ]
             for data, label in tax_cols:

@@ -63,7 +63,7 @@ with col_c1:
                 safe_set("well_eur_input", d_prod["well_eur_bcf"])
                 safe_set("prod_dur_input", d_prod["prod_duration"])
                 safe_set("giip_input", d_prod["giip_bcf"])
-                safe_set("oiip_mmbbl", d_prod["oiip_mmbbl"])
+                safe_set("oiip_input", d_prod["oiip_mmbbl"])
                 safe_set("drilling_rate_input", d_prod["drilling_rate"])
                 safe_set("max_rate_input", d_prod["max_prod_rate"])
                 
@@ -298,7 +298,7 @@ with st.expander("Production Setup", expanded=True):
                     gas_profile = profile.make_production_profile_yearly(peak_production_annual=max_prod_rate if max_prod_rate > 0 else None)
                     cgr = (oiip_mmbbl / giip_bcf) * 1000
                     oil_profile = {year: gas * cgr / 1000 for year, gas in gas_profile.items()}
-                    drilling_plan = {year: drilling_plan.get(year, 0) for year in range(1, int(prod_duration) + 1)}
+                    drilling_plan = {year: drilling_plan.get(year, 0) for year in range(int(prod_duration))}
                     st.session_state.prod_data = pd.DataFrame({
                         'Year': list(gas_profile.keys()),
                         'Gas Production (BCF/y)': list(gas_profile.values()),

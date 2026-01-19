@@ -132,7 +132,7 @@ if run_button:
     # Step 5: 감가상각 계산
     cf.calculate_depreciation(method=depreciation_method.lower().replace(" ", "_"), useful_life=useful_life, output=False)
     # Step 6: 조정된 값으로 세금 재계산
-    cf.calculate_taxes(investment_exemption=True, local_tax=True, output=False)
+    cf.calculate_taxes(investment_tax_credit=True, local_tax=True, output=False)
     # Step 7: 최종 현금흐름 계산
     cf.calculate_net_cash_flow(output=False)
     # Step 8: NPV 계산
